@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
+#                         Render.com Blueprint
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Backend API
+  # ─────────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: olimpiyat-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001
+      - key: MONGODB_URI
+        sync: false  # Render dashboard'dan elle girilmeli
+      - key: JWT_SECRET
+        generateValue: true  # Render otomatik oluşturur
+      - key: FRONTEND_URL
+        fromService:
+          name: olimpiyat-frontend
+          type: web
+          property: host
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Frontend (Static Site)
+  # ─────────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: olimpiyat-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: olimpiyat-backend
+          type: web
+          property: hostport
