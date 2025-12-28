@@ -6,7 +6,24 @@
 import axios from 'axios'
 
 // Production'da farklı backend URL kullan
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  
+  // Eğer environment variable yoksa, development modunda /api kullan
+  if (!envUrl) {
+    return '/api'
+  }
+  
+  // URL'in sonunda /api yoksa ekle
+  let url = envUrl.trim()
+  if (!url.endsWith('/api')) {
+    url = url.endsWith('/') ? url + 'api' : url + '/api'
+  }
+  
+  return url
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 const api = axios.create({
   baseURL: API_BASE_URL,

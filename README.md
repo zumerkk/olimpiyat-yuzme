@@ -118,7 +118,7 @@ http://localhost:5173
 
 | E-posta | Şifre |
 |---------|-------|
-| admin@olimpiyatyuzme.com | admin123456 |
+| admin@olimpiyatyuzme.com | OlimpiyatAdmin2024! |
 
 ## 📁 Proje Yapısı
 

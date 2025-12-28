@@ -50,7 +50,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: olimpiyat-backend
-          type: web
-          property: hostport
+        value: https://olimpiyat-backend.onrender.com/api

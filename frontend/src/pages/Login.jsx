@@ -202,7 +202,7 @@ export default function Login() {
                   E-posta: <code className="bg-primary-100 px-1.5 py-0.5 rounded">admin@olimpiyatyuzme.com</code>
                 </p>
                 <p className="text-xs text-primary-600 mt-1">
-                  Şifre: <code className="bg-primary-100 px-1.5 py-0.5 rounded">admin123456</code>
+                  Şifre: <code className="bg-primary-100 px-1.5 py-0.5 rounded">OlimpiyatAdmin2024!</code>
                 </p>
               </div>
             </div>
