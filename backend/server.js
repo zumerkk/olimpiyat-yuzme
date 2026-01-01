@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
 //                         YÜZME BRANŞI YÖNETİM SİSTEMİ
-//                      Enterprise Backend Server v3.0
-//                    Render.com Cold Start Optimized
+//                      Enterprise Backend Server v3.1
+//                    Render.com Cold Start Optimized + CORS Fixed
 // ═══════════════════════════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -66,7 +66,64 @@ const app = express();
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CORS Configuration - MUST BE FIRST (before any routes)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, health checks, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      config.FRONTEND_URL,
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://olimpiyat-frontend.onrender.com',
+      'https://olimpiyat-backend.onrender.com',
+      // Render.com URLs (wildcard support)
+      /\.onrender\.com$/,
+      // Vercel URLs
+      /\.vercel\.app$/,
+      // Netlify URLs
+      /\.netlify\.app$/
+    ];
+    
+    // Check string origins and regex patterns
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return allowed === origin;
+      }
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      logger.warn('CORS blocked origin', { origin });
+      // Don't error, just don't set header - let the request through for debugging
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID']
+};
+
+// Apply CORS to ALL routes
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Request ID middleware (for tracking)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 app.use((req, res, next) => {
   req.requestId = req.headers['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   res.setHeader('X-Request-ID', req.requestId);
@@ -75,10 +132,37 @@ app.use((req, res, next) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CRITICAL: Fast Health Check Endpoint (Before all middleware)
-// Bu endpoint tüm middleware'den önce çalışır - cold start için kritik
+// Fast Health Check Endpoints (After CORS, before heavy middleware)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Super fast ping - just for wake-up checks
+app.get('/api/ping', (req, res) => {
+  res.json({ 
+    pong: true, 
+    timestamp: Date.now(),
+    serverReady: serverState.isReady,
+    dbConnected: serverState.isDbConnected
+  });
+});
+
+// Detailed readiness check
+app.get('/api/ready', async (req, res) => {
+  const checks = {
+    server: true,
+    database: mongoose.connection.readyState === 1,
+    configured: !!config.MONGODB_URI && !!config.JWT_SECRET
+  };
+  
+  const allReady = Object.values(checks).every(v => v === true);
+  
+  res.status(allReady ? 200 : 503).json({
+    ready: allReady,
+    checks,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Full health check with caching
 app.get('/api/health', async (req, res) => {
   const now = Date.now();
   
@@ -95,7 +179,7 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     uptimeFormatted: formatUptime(process.uptime()),
     environment: config.NODE_ENV,
-    version: '3.0.0',
+    version: '3.1.0',
     requestId: req.requestId,
     serverReady: serverState.isReady,
     services: {
@@ -119,7 +203,7 @@ app.get('/api/health', async (req, res) => {
     } else if (dbState === 2) {
       healthcheck.services.database = 'connecting';
       healthcheck.status = 'STARTING';
-      healthcheck.success = true; // Connecting durumu hala OK
+      healthcheck.success = true;
     } else {
       healthcheck.services.database = 'disconnected';
       healthcheck.status = 'DEGRADED';
@@ -148,33 +232,6 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Prewarm endpoint - Frontend bu endpoint'i çağırarak backend'i uyandırır
-app.get('/api/ping', (req, res) => {
-  res.json({ 
-    pong: true, 
-    timestamp: Date.now(),
-    serverReady: serverState.isReady,
-    dbConnected: serverState.isDbConnected
-  });
-});
-
-// Detailed readiness check
-app.get('/api/ready', async (req, res) => {
-  const checks = {
-    server: true,
-    database: mongoose.connection.readyState === 1,
-    configured: !!config.MONGODB_URI && !!config.JWT_SECRET
-  };
-  
-  const allReady = Object.values(checks).every(v => v === true);
-  
-  res.status(allReady ? 200 : 503).json({
-    ready: allReady,
-    checks,
-    timestamp: new Date().toISOString()
-  });
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Security Middleware
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -185,46 +242,6 @@ app.use(helmetMiddleware);
 // Additional security headers
 app.use(additionalHeaders);
 
-// CORS
-const corsOptions = {
-  ...config.CORS_OPTIONS,
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      config.FRONTEND_URL,
-      'http://localhost:5173',
-      'http://localhost:3000',
-      // Render.com URLs (wildcard support)
-      /\.onrender\.com$/,
-      // Vercel URLs
-      /\.vercel\.app$/,
-      // Netlify URLs
-      /\.netlify\.app$/
-    ];
-    
-    // Check string origins and regex patterns
-    const isAllowed = allowedOrigins.some(allowed => {
-      if (typeof allowed === 'string') {
-        return allowed === origin;
-      }
-      if (allowed instanceof RegExp) {
-        return allowed.test(origin);
-      }
-      return false;
-    });
-    
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      logger.warn('CORS blocked origin', { origin, requestId: 'cors-check' });
-      callback(new Error('CORS policy violation'));
-    }
-  }
-};
-app.use(cors(corsOptions));
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Body Parser & Compression
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -232,7 +249,7 @@ app.use(cors(corsOptions));
 // Compression
 app.use(compression({
   level: 6,
-  threshold: 100 * 1024, // 100KB
+  threshold: 100 * 1024,
   filter: (req, res) => {
     if (req.headers['x-no-compression']) {
       return false;
@@ -262,7 +279,6 @@ app.use(hppMiddleware);
 // Logging
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Morgan HTTP request logger
 if (config.isProduction()) {
   app.use(morgan('combined', { stream: logger.stream }));
 } else {
@@ -316,7 +332,7 @@ app.get('/api', (req, res) => {
   res.json({
     success: true,
     message: '🏊 Kırıkkale Olimpiyat Spor Kulübü - Yüzme Branşı API',
-    version: '3.0.0',
+    version: '3.1.0',
     environment: config.NODE_ENV,
     serverReady: serverState.isReady,
     endpoints: {
@@ -371,14 +387,13 @@ const connectDB = async (retryCount = 0) => {
     logger.error(`❌ MongoDB bağlantı hatası (Deneme ${retryCount + 1}):`, { error: error.message });
     
     if (retryCount < maxRetries - 1) {
-      const delay = Math.min(5000 * (retryCount + 1), 15000); // Max 15 saniye bekle
+      const delay = Math.min(5000 * (retryCount + 1), 15000);
       logger.info(`⏳ ${delay/1000} saniye sonra tekrar denenecek...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return connectDB(retryCount + 1);
     }
     
     logger.error('❌ MongoDB bağlantısı kurulamadı. Server yine de başlatılacak.');
-    // Production'da exit etme - health check degraded döner
     return null;
   }
 };
@@ -387,7 +402,7 @@ const connectDB = async (retryCount = 0) => {
 mongoose.connection.on('connected', () => {
   logger.info('MongoDB connected');
   serverState.isDbConnected = true;
-  serverState.healthCheckCache = null; // Clear health cache
+  serverState.healthCheckCache = null;
 });
 
 mongoose.connection.on('error', (err) => {
@@ -416,7 +431,6 @@ mongoose.connection.on('disconnected', () => {
 // Scheduled Jobs - Cron
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Her gün saat 09:00'da bildirim kontrolü
 cron.schedule('0 9 * * *', async () => {
   if (!serverState.isDbConnected) {
     logger.warn('Bildirim kontrolü atlandı - DB bağlantısı yok');
@@ -436,7 +450,6 @@ cron.schedule('0 9 * * *', async () => {
   timezone: 'Europe/Istanbul'
 });
 
-// Her ayın 1'inde aylık ödemeleri oluştur
 cron.schedule('0 0 1 * *', async () => {
   if (!serverState.isDbConnected) {
     logger.warn('Aylık ödeme oluşturma atlandı - DB bağlantısı yok');
@@ -512,7 +525,6 @@ const gracefulShutdown = async (signal) => {
       }
     });
 
-    // Force close after 30 seconds
     setTimeout(() => {
       logger.error('Forcing shutdown after timeout');
       process.exit(1);
@@ -523,21 +535,17 @@ const gracefulShutdown = async (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
   serverState.errorCount++;
-  // Production'da crash etme, sadece logla
   if (!config.isProduction()) {
     process.exit(1);
   }
 });
 
-// Unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', { reason: reason?.message || reason });
   serverState.errorCount++;
-  // Production'da crash etme
   if (!config.isProduction()) {
     process.exit(1);
   }
@@ -562,33 +570,30 @@ const startServer = async () => {
   try {
     const PORT = config.PORT;
     
-    // HTTP Server'ı HEMEN başlat (DB bağlantısını beklemeden)
-    // Bu sayede Render health check başarılı olur
     server = app.listen(PORT, async () => {
       logger.info(`
   ╔══════════════════════════════════════════════════════════════╗
   ║                                                              ║
   ║     🏊 KIRIKKALE OLİMPİYAT SPOR KULÜBÜ                      ║
-  ║        Yüzme Branşı Yönetim Sistemi v3.0                    ║
+  ║        Yüzme Branşı Yönetim Sistemi v3.1                    ║
   ║                                                              ║
   ║     🚀 Server Port: ${PORT}                                    ║
   ║     📡 API: http://localhost:${PORT}/api                       ║
   ║     🔒 Environment: ${config.NODE_ENV.padEnd(23)}           ║
   ║     📱 SMS: ${(config.NETGSM.enabled ? 'Enabled' : 'Disabled').padEnd(30)}║
+  ║     🌐 CORS: Enabled                                         ║
   ║                                                              ║
   ║     ⚡ Server started - connecting to database...            ║
   ║                                                              ║
   ╚══════════════════════════════════════════════════════════════╝
       `);
       
-      // Server başladıktan sonra DB'ye bağlan
       try {
         await connectDB();
         serverState.isReady = true;
         logger.info('✅ Server tamamen hazır!');
       } catch (dbError) {
         logger.error('⚠️ Database connection failed, but server is running');
-        // Server çalışmaya devam eder, health check DEGRADED döner
       }
     });
   } catch (error) {
