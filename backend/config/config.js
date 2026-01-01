@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Enterprise Configuration
+//                         Enterprise Configuration v3.0
+//                    Optimized for Render.com Cold Starts
 // ═══════════════════════════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -13,17 +14,31 @@ const config = {
   PORT: parseInt(process.env.PORT, 10) || 5001,
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // MongoDB
+  // MongoDB - Render.com Cold Start için optimize edildi
   // ─────────────────────────────────────────────────────────────────────────────
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/olimpiyat_yuzme',
   MONGODB_OPTIONS: {
+    // Connection pooling
     maxPoolSize: 10,
     minPoolSize: 2,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
+    
+    // Render cold start için artırılmış timeout'lar (kritik!)
+    serverSelectionTimeoutMS: 30000,  // 30 saniye (önceki: 5 saniye)
+    connectTimeoutMS: 30000,          // 30 saniye
+    socketTimeoutMS: 60000,           // 60 saniye
+    
+    // Network settings
     family: 4,
+    
+    // Write concern
     retryWrites: true,
-    w: 'majority'
+    w: 'majority',
+    
+    // Heartbeat
+    heartbeatFrequencyMS: 10000,
+    
+    // Auto reconnect
+    autoIndex: true,
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -50,15 +65,15 @@ const config = {
     credentials: true,
     optionsSuccessStatus: 200,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID']
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // Rate Limiting
+  // Rate Limiting - Public endpoints için daha gevşek
   // ─────────────────────────────────────────────────────────────────────────────
   RATE_LIMIT: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 dakika
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100, // 100 istek
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 200, // Artırıldı
     message: {
       success: false,
       message: 'Çok fazla istek gönderdiniz. Lütfen daha sonra tekrar deneyin.'
@@ -67,12 +82,24 @@ const config = {
     legacyHeaders: false
   },
   
+  // Public registration için ayrı rate limit
+  PUBLIC_RATE_LIMIT: {
+    windowMs: 15 * 60 * 1000,
+    max: 50, // Public form için
+    message: {
+      success: false,
+      message: 'Çok fazla kayıt denemesi. Lütfen bekleyin.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+  },
+  
   // ─────────────────────────────────────────────────────────────────────────────
-  // Auth Rate Limiting (daha sıkı)
+  // Auth Rate Limiting
   // ─────────────────────────────────────────────────────────────────────────────
   AUTH_RATE_LIMIT: {
-    windowMs: 15 * 60 * 1000, // 15 dakika
-    max: 5, // 5 deneme
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     message: {
       success: false,
       message: 'Çok fazla başarısız giriş denemesi. 15 dakika sonra tekrar deneyin.'
@@ -117,6 +144,19 @@ const config = {
     SESSION_TYPES: ['Başlangıç', 'Orta Seviye', 'İleri Seviye', 'Yarışma Hazırlık', 'Özel Ders'],
     AGE_GROUPS: ['Mini (4-6)', 'Küçükler (7-9)', 'Yıldızlar (10-12)', 'Gençler (13-15)', 'Büyükler (16+)'],
     PAYMENT_STATUS: ['Ödendi', 'Beklemede', 'Gecikmiş', 'Kısmi Ödeme'],
+    DAYS: ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'],
+    BLOOD_TYPES: ['A Rh+', 'A Rh-', 'B Rh+', 'B Rh-', 'AB Rh+', 'AB Rh-', '0 Rh+', '0 Rh-'],
+    GUARDIAN_RELATIONS: ['Anne', 'Baba', 'Vasi', 'Diğer']
+  },
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Server Warmup Settings (Render cold start için)
+  // ─────────────────────────────────────────────────────────────────────────────
+  WARMUP: {
+    enabled: true,
+    startupDelay: 2000,     // Server başladıktan 2 saniye sonra
+    preconnectAttempts: 3,  // MongoDB'ye 3 kez bağlanmayı dene
+    healthCheckCache: 5000  // Health check cache süresi (ms)
   },
   
   // ─────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
 //                         YÜZME BRANŞI YÖNETİM SİSTEMİ
-//                      Enterprise Backend Server v2.0
+//                      Enterprise Backend Server v3.0
+//                    Render.com Cold Start Optimized
 // ═══════════════════════════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -26,6 +27,7 @@ const {
   helmetMiddleware,
   generalRateLimiter,
   authRateLimiter,
+  publicRateLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   xssClean,
@@ -43,12 +45,135 @@ const dashboardRoutes = require('./routes/dashboard');
 const registrationRoutes = require('./routes/registration');
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Server State Management (Enterprise)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const serverState = {
+  isReady: false,
+  isDbConnected: false,
+  startupTime: Date.now(),
+  lastHealthCheck: null,
+  healthCheckCache: null,
+  requestCount: 0,
+  errorCount: 0
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Express App
 // ═══════════════════════════════════════════════════════════════════════════════
 const app = express();
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
+
+// Request ID middleware (for tracking)
+app.use((req, res, next) => {
+  req.requestId = req.headers['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  res.setHeader('X-Request-ID', req.requestId);
+  serverState.requestCount++;
+  next();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRITICAL: Fast Health Check Endpoint (Before all middleware)
+// Bu endpoint tüm middleware'den önce çalışır - cold start için kritik
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/health', async (req, res) => {
+  const now = Date.now();
+  
+  // Cache kontrolü (5 saniye)
+  if (serverState.healthCheckCache && 
+      (now - serverState.lastHealthCheck) < config.WARMUP.healthCheckCache) {
+    return res.status(serverState.healthCheckCache.status).json(serverState.healthCheckCache.data);
+  }
+  
+  const healthcheck = {
+    success: true,
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    uptimeFormatted: formatUptime(process.uptime()),
+    environment: config.NODE_ENV,
+    version: '3.0.0',
+    requestId: req.requestId,
+    serverReady: serverState.isReady,
+    services: {
+      database: 'checking...',
+      sms: config.NETGSM.enabled ? 'enabled' : 'disabled'
+    },
+    metrics: {
+      requestCount: serverState.requestCount,
+      errorCount: serverState.errorCount,
+      memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+    }
+  };
+
+  try {
+    // MongoDB connection check
+    const dbState = mongoose.connection.readyState;
+    
+    if (dbState === 1) {
+      healthcheck.services.database = 'connected';
+      serverState.isDbConnected = true;
+    } else if (dbState === 2) {
+      healthcheck.services.database = 'connecting';
+      healthcheck.status = 'STARTING';
+      healthcheck.success = true; // Connecting durumu hala OK
+    } else {
+      healthcheck.services.database = 'disconnected';
+      healthcheck.status = 'DEGRADED';
+      serverState.isDbConnected = false;
+    }
+
+    // Overall server readiness
+    healthcheck.serverReady = serverState.isReady && dbState === 1;
+    
+    const statusCode = healthcheck.serverReady ? 200 : 503;
+    
+    // Cache the result
+    serverState.healthCheckCache = {
+      status: statusCode,
+      data: healthcheck
+    };
+    serverState.lastHealthCheck = now;
+    
+    res.status(statusCode).json(healthcheck);
+  } catch (error) {
+    healthcheck.status = 'ERROR';
+    healthcheck.services.database = 'error';
+    healthcheck.error = error.message;
+    serverState.errorCount++;
+    res.status(503).json(healthcheck);
+  }
+});
+
+// Prewarm endpoint - Frontend bu endpoint'i çağırarak backend'i uyandırır
+app.get('/api/ping', (req, res) => {
+  res.json({ 
+    pong: true, 
+    timestamp: Date.now(),
+    serverReady: serverState.isReady,
+    dbConnected: serverState.isDbConnected
+  });
+});
+
+// Detailed readiness check
+app.get('/api/ready', async (req, res) => {
+  const checks = {
+    server: true,
+    database: mongoose.connection.readyState === 1,
+    configured: !!config.MONGODB_URI && !!config.JWT_SECRET
+  };
+  
+  const allReady = Object.values(checks).every(v => v === true);
+  
+  res.status(allReady ? 200 : 503).json({
+    ready: allReady,
+    checks,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Security Middleware
@@ -93,7 +218,7 @@ const corsOptions = {
     if (isAllowed) {
       callback(null, true);
     } else {
-      logger.warn('CORS blocked origin', { origin });
+      logger.warn('CORS blocked origin', { origin, requestId: 'cors-check' });
       callback(new Error('CORS policy violation'));
     }
   }
@@ -148,8 +273,15 @@ if (config.isProduction()) {
 // Rate Limiting
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// General rate limiter
-app.use('/api', generalRateLimiter);
+// General rate limiter for protected routes
+app.use('/api/athletes', generalRateLimiter);
+app.use('/api/sessions', generalRateLimiter);
+app.use('/api/payments', generalRateLimiter);
+app.use('/api/notifications', generalRateLimiter);
+app.use('/api/dashboard', generalRateLimiter);
+
+// Public endpoints için daha gevşek rate limit
+app.use('/api/registration', publicRateLimiter);
 
 // Auth rate limiter (stricter)
 app.use('/api/auth/login', authRateLimiter);
@@ -168,41 +300,6 @@ app.use('/assets', express.static(path.join(__dirname, '../'), {
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Health Check Endpoint
-// ═══════════════════════════════════════════════════════════════════════════════
-
-app.get('/api/health', async (req, res) => {
-  const healthcheck = {
-    success: true,
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: config.NODE_ENV,
-    version: '2.0.0',
-    services: {
-      database: 'checking...',
-      sms: config.NETGSM.enabled ? 'enabled' : 'disabled'
-    }
-  };
-
-  try {
-    // Check MongoDB connection
-    if (mongoose.connection.readyState === 1) {
-      healthcheck.services.database = 'connected';
-    } else {
-      healthcheck.services.database = 'disconnected';
-      healthcheck.status = 'DEGRADED';
-    }
-
-    res.status(200).json(healthcheck);
-  } catch (error) {
-    healthcheck.status = 'ERROR';
-    healthcheck.services.database = 'error';
-    res.status(503).json(healthcheck);
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // API Routes
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -219,10 +316,13 @@ app.get('/api', (req, res) => {
   res.json({
     success: true,
     message: '🏊 Kırıkkale Olimpiyat Spor Kulübü - Yüzme Branşı API',
-    version: '2.0.0',
+    version: '3.0.0',
     environment: config.NODE_ENV,
+    serverReady: serverState.isReady,
     endpoints: {
       health: '/api/health',
+      ready: '/api/ready',
+      ping: '/api/ping',
       auth: '/api/auth',
       athletes: '/api/athletes',
       sessions: '/api/sessions',
@@ -242,17 +342,25 @@ app.get('/api', (req, res) => {
 app.use(notFoundHandler);
 
 // Global error handler
-app.use(globalErrorHandler);
+app.use((err, req, res, next) => {
+  serverState.errorCount++;
+  globalErrorHandler(err, req, res, next);
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MongoDB Connection
+// MongoDB Connection with Retry Logic
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const connectDB = async () => {
+const connectDB = async (retryCount = 0) => {
+  const maxRetries = config.WARMUP.preconnectAttempts;
+  
   try {
+    logger.info(`🔄 MongoDB bağlantısı kuruluyor... (Deneme ${retryCount + 1}/${maxRetries})`);
+    
     const conn = await mongoose.connect(config.MONGODB_URI, config.MONGODB_OPTIONS);
     
     logger.info(`✅ MongoDB bağlantısı başarılı: ${conn.connection.host}`);
+    serverState.isDbConnected = true;
     
     // Varsayılan admin oluştur
     const Admin = require('./models/Admin');
@@ -260,22 +368,48 @@ const connectDB = async () => {
     
     return conn;
   } catch (error) {
-    logger.error('❌ MongoDB bağlantı hatası:', { error: error.message });
-    process.exit(1);
+    logger.error(`❌ MongoDB bağlantı hatası (Deneme ${retryCount + 1}):`, { error: error.message });
+    
+    if (retryCount < maxRetries - 1) {
+      const delay = Math.min(5000 * (retryCount + 1), 15000); // Max 15 saniye bekle
+      logger.info(`⏳ ${delay/1000} saniye sonra tekrar denenecek...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return connectDB(retryCount + 1);
+    }
+    
+    logger.error('❌ MongoDB bağlantısı kurulamadı. Server yine de başlatılacak.');
+    // Production'da exit etme - health check degraded döner
+    return null;
   }
 };
 
 // MongoDB connection events
 mongoose.connection.on('connected', () => {
   logger.info('MongoDB connected');
+  serverState.isDbConnected = true;
+  serverState.healthCheckCache = null; // Clear health cache
 });
 
 mongoose.connection.on('error', (err) => {
   logger.error('MongoDB error', { error: err.message });
+  serverState.isDbConnected = false;
+  serverState.healthCheckCache = null;
 });
 
 mongoose.connection.on('disconnected', () => {
   logger.warn('MongoDB disconnected');
+  serverState.isDbConnected = false;
+  serverState.healthCheckCache = null;
+});
+
+// Reconnect on disconnect
+mongoose.connection.on('disconnected', () => {
+  if (config.isProduction()) {
+    setTimeout(() => {
+      logger.info('🔄 MongoDB yeniden bağlanılıyor...');
+      mongoose.connect(config.MONGODB_URI, config.MONGODB_OPTIONS).catch(() => {});
+    }, 5000);
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -284,6 +418,11 @@ mongoose.connection.on('disconnected', () => {
 
 // Her gün saat 09:00'da bildirim kontrolü
 cron.schedule('0 9 * * *', async () => {
+  if (!serverState.isDbConnected) {
+    logger.warn('Bildirim kontrolü atlandı - DB bağlantısı yok');
+    return;
+  }
+  
   logger.info('🔔 Günlük bildirim kontrolü başlatıldı');
   try {
     const paymentReminders = await NotificationService.checkPaymentReminders();
@@ -299,6 +438,11 @@ cron.schedule('0 9 * * *', async () => {
 
 // Her ayın 1'inde aylık ödemeleri oluştur
 cron.schedule('0 0 1 * *', async () => {
+  if (!serverState.isDbConnected) {
+    logger.warn('Aylık ödeme oluşturma atlandı - DB bağlantısı yok');
+    return;
+  }
+  
   logger.info('📅 Aylık ödeme kayıtları oluşturuluyor');
   try {
     const Payment = require('./models/Payment');
@@ -352,6 +496,7 @@ let server;
 
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Shutting down gracefully...`);
+  serverState.isReady = false;
   
   if (server) {
     server.close(async () => {
@@ -381,14 +526,33 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
-  process.exit(1);
+  serverState.errorCount++;
+  // Production'da crash etme, sadece logla
+  if (!config.isProduction()) {
+    process.exit(1);
+  }
 });
 
 // Unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', { reason: reason?.message || reason });
-  process.exit(1);
+  serverState.errorCount++;
+  // Production'da crash etme
+  if (!config.isProduction()) {
+    process.exit(1);
+  }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helper Functions
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function formatUptime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${hours}h ${minutes}m ${secs}s`;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Server Start
@@ -396,26 +560,36 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const startServer = async () => {
   try {
-    // Connect to database
-    await connectDB();
-    
-    // Start server
     const PORT = config.PORT;
-    server = app.listen(PORT, () => {
+    
+    // HTTP Server'ı HEMEN başlat (DB bağlantısını beklemeden)
+    // Bu sayede Render health check başarılı olur
+    server = app.listen(PORT, async () => {
       logger.info(`
   ╔══════════════════════════════════════════════════════════════╗
   ║                                                              ║
   ║     🏊 KIRIKKALE OLİMPİYAT SPOR KULÜBÜ                      ║
-  ║        Yüzme Branşı Yönetim Sistemi v2.0                    ║
+  ║        Yüzme Branşı Yönetim Sistemi v3.0                    ║
   ║                                                              ║
   ║     🚀 Server Port: ${PORT}                                    ║
   ║     📡 API: http://localhost:${PORT}/api                       ║
   ║     🔒 Environment: ${config.NODE_ENV.padEnd(23)}           ║
-  ║     💾 Database: Connected                                  ║
   ║     📱 SMS: ${(config.NETGSM.enabled ? 'Enabled' : 'Disabled').padEnd(30)}║
+  ║                                                              ║
+  ║     ⚡ Server started - connecting to database...            ║
   ║                                                              ║
   ╚══════════════════════════════════════════════════════════════╝
       `);
+      
+      // Server başladıktan sonra DB'ye bağlan
+      try {
+        await connectDB();
+        serverState.isReady = true;
+        logger.info('✅ Server tamamen hazır!');
+      } catch (dbError) {
+        logger.error('⚠️ Database connection failed, but server is running');
+        // Server çalışmaya devam eder, health check DEGRADED döner
+      }
     });
   } catch (error) {
     logger.error('Server startup failed', { error: error.message });

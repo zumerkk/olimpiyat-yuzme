@@ -22,12 +22,16 @@ const logger = require('../services/logger');
 // @desc    Kayıt formu için gerekli veriler
 // @access  Public
 router.get('/form-data', (req, res) => {
+  logger.info('Form data requested', { ip: req.ip });
+  
   res.json({
     success: true,
     data: {
       levels: config.SWIMMING.SESSION_TYPES,
       ageGroups: config.SWIMMING.AGE_GROUPS,
-      days: ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+      days: config.SWIMMING.DAYS,
+      bloodTypes: config.SWIMMING.BLOOD_TYPES,
+      guardianRelations: config.SWIMMING.GUARDIAN_RELATIONS
     }
   });
 });
@@ -44,9 +48,19 @@ router.post('/submit', [
   body('phone').notEmpty().withMessage('Telefon zorunludur'),
   body('email').isEmail().withMessage('Geçerli e-posta adresi giriniz')
 ], async (req, res) => {
+  const requestId = req.headers['x-request-id'] || `submit_${Date.now()}`;
+  
+  logger.info('📝 Registration submission received', { 
+    requestId,
+    name: `${req.body.firstName} ${req.body.lastName}`,
+    source: req.query.source,
+    ip: req.ip
+  });
+
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.warn('Validation failed', { requestId, errors: errors.array() });
       return res.status(400).json({
         success: false,
         errors: errors.array()
@@ -60,6 +74,7 @@ router.post('/submit', [
     });
     
     if (existingRegistration) {
+      logger.warn('Duplicate TC No in registrations', { requestId, tcNo: req.body.tcNo });
       return res.status(400).json({
         success: false,
         message: 'Bu TC Kimlik No ile zaten bir kayıt mevcut'
@@ -68,6 +83,7 @@ router.post('/submit', [
 
     const existingAthlete = await Athlete.findOne({ tcNo: req.body.tcNo });
     if (existingAthlete) {
+      logger.warn('Duplicate TC No in athletes', { requestId, tcNo: req.body.tcNo });
       return res.status(400).json({
         success: false,
         message: 'Bu TC Kimlik No ile zaten kayıtlı sporcu bulunmaktadır'
@@ -77,19 +93,40 @@ router.post('/submit', [
     // Kayıt kaynağını belirle
     const source = req.query.source === 'qr' ? 'QR Kod' : 'Online Link';
 
+    // preferredAgeGroup boş string ise null yap (enum validation için)
+    const cleanedData = { ...req.body };
+    if (cleanedData.preferredAgeGroup === '') {
+      cleanedData.preferredAgeGroup = null;
+    }
+
     // Kayıt oluştur
     const registration = await Registration.create({
-      ...req.body,
+      ...cleanedData,
       source,
       submissionInfo: {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        timestamp: new Date()
+        timestamp: new Date(),
+        requestId
       }
     });
 
-    // Admin'lere bildirim gönder
-    await NotificationService.createNewRegistrationNotification(registration);
+    logger.info('✅ Registration created successfully', { 
+      requestId,
+      registrationId: registration._id,
+      name: `${registration.firstName} ${registration.lastName}`
+    });
+
+    // Admin'lere bildirim gönder (async, hata olursa submission'ı etkilemesin)
+    try {
+      await NotificationService.createNewRegistrationNotification(registration);
+    } catch (notifError) {
+      logger.error('Notification creation failed', { 
+        requestId, 
+        error: notifError.message 
+      });
+      // Devam et, kayıt zaten yapıldı
+    }
 
     res.status(201).json({
       success: true,
@@ -97,14 +134,30 @@ router.post('/submit', [
       data: {
         id: registration._id,
         name: `${registration.firstName} ${registration.lastName}`,
-        status: registration.status
+        status: registration.status,
+        requestId
       }
     });
   } catch (error) {
-    logger.error('Registration submit error', { error: error.message });
+    logger.error('❌ Registration submit error', { 
+      requestId,
+      error: error.message,
+      stack: error.stack
+    });
+    
+    // MongoDB validation error handling
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası'
+      message: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.',
+      requestId
     });
   }
 });

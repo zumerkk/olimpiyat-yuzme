@@ -69,6 +69,24 @@ const authRateLimiter = rateLimit({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Rate Limiting - Public Endpoints (kayıt formu için)
+// ─────────────────────────────────────────────────────────────────────────────
+const publicRateLimiter = rateLimit({
+  windowMs: config.PUBLIC_RATE_LIMIT.windowMs,
+  max: config.PUBLIC_RATE_LIMIT.max,
+  message: config.PUBLIC_RATE_LIMIT.message,
+  standardHeaders: config.PUBLIC_RATE_LIMIT.standardHeaders,
+  legacyHeaders: config.PUBLIC_RATE_LIMIT.legacyHeaders,
+  handler: (req, res, next, options) => {
+    logger.warn('Public rate limit exceeded', {
+      ip: req.ip,
+      url: req.originalUrl
+    });
+    res.status(429).json(options.message);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MongoDB Injection Koruması
 // ─────────────────────────────────────────────────────────────────────────────
 const mongoSanitizeMiddleware = mongoSanitize({
@@ -147,6 +165,7 @@ module.exports = {
   helmetMiddleware,
   generalRateLimiter,
   authRateLimiter,
+  publicRateLimiter,
   mongoSanitizeMiddleware,
   hppMiddleware,
   xssClean,

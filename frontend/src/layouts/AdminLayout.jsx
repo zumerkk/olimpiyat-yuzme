@@ -8,6 +8,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '../store/authStore'
 import api from '../utils/api'
+import { MiniConnectionIndicator } from '../components/ConnectionStatus'
 import {
   LayoutDashboard,
   Users,
@@ -194,6 +195,12 @@ export default function AdminLayout() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Connection Status Indicator */}
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-gray-50">
+                <MiniConnectionIndicator />
+                <span className="text-xs text-gray-500 hidden sm:inline">Sunucu</span>
+              </div>
+
               {/* QR Code Button */}
               <button
                 onClick={() => navigate('/kayitlar')}

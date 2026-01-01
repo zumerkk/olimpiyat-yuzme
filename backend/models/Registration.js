@@ -68,7 +68,8 @@ const registrationSchema = new mongoose.Schema({
   },
   preferredAgeGroup: {
     type: String,
-    enum: config.SWIMMING.AGE_GROUPS
+    enum: [...config.SWIMMING.AGE_GROUPS, '', null], // Boş değere izin ver
+    default: ''
   },
   preferredDays: [{
     type: String,
