@@ -75,18 +75,14 @@ const corsOptions = {
     // Allow requests with no origin (mobile apps, curl, health checks, etc.)
     if (!origin) return callback(null, true);
     
+    // Use config for allowed origins
     const allowedOrigins = [
+      ...config.ALLOWED_ORIGINS,
       config.FRONTEND_URL,
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://olimpiyat-frontend.onrender.com',
-      'https://olimpiyat-backend.onrender.com',
       // Render.com URLs (wildcard support)
       /\.onrender\.com$/,
-      // Vercel URLs
-      /\.vercel\.app$/,
-      // Netlify URLs
-      /\.netlify\.app$/
+      // Custom domain patterns
+      /olimpiyatyuzme\.com$/,
     ];
     
     // Check string origins and regex patterns
@@ -104,7 +100,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       logger.warn('CORS blocked origin', { origin });
-      // Don't error, just don't set header - let the request through for debugging
+      // In production, still allow for debugging but log it
       callback(null, true);
     }
   },

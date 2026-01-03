@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-#                         Render.com Blueprint v2.0
-#                    Enterprise Configuration - Optimized for Cold Start
+#                         Render.com Blueprint v3.0
+#                    Production - olimpiyatyuzme.com
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -11,14 +11,14 @@ services:
   - type: web
     name: olimpiyat-backend
     runtime: node
-    plan: free
+    plan: free  # Starter ($7/ay) veya üstü önerilir custom domain için
     rootDir: backend
     
     # Build Configuration
     buildCommand: npm ci --production
     startCommand: node server.js
     
-    # Health Check - Kritik: Backend'in hazır olup olmadığını kontrol eder
+    # Health Check
     healthCheckPath: /api/ping
     
     # Environment Variables
@@ -30,11 +30,13 @@ services:
       - key: NODE_OPTIONS
         value: "--max-old-space-size=512"
       - key: MONGODB_URI
-        sync: false  # Render dashboard'dan elle girilmeli
+        sync: false  # Render dashboard'dan girilecek
       - key: JWT_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://olimpiyat-frontend.onrender.com
+        value: https://www.olimpiyatyuzme.com
+      - key: ADMIN_EMAIL
+        value: admin@olimpiyatyuzme.com
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Frontend (Static Site)
@@ -42,7 +44,7 @@ services:
   - type: web
     name: olimpiyat-frontend
     runtime: static
-    plan: free
+    plan: free  # Static site her zaman ücretsiz
     rootDir: frontend
     
     # Build Configuration
@@ -60,11 +62,9 @@ services:
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
-      # Cache static assets
       - path: /assets/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
-      # Don't cache HTML
       - path: /*.html
         name: Cache-Control
         value: no-cache, no-store, must-revalidate
@@ -78,4 +78,24 @@ services:
     # Environment Variables
     envVars:
       - key: VITE_API_URL
-        value: https://olimpiyat-backend.onrender.com/api
+        value: https://api.olimpiyatyuzme.com/api
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CUSTOM DOMAIN YAPILANDIRMASI
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Render Dashboard'da yapılacaklar:
+#
+# 1. BACKEND için (api.olimpiyatyuzme.com):
+#    - olimpiyat-backend > Settings > Custom Domains
+#    - Add Custom Domain: api.olimpiyatyuzme.com
+#    - DNS: CNAME api -> olimpiyat-backend.onrender.com
+#
+# 2. FRONTEND için (www.olimpiyatyuzme.com):
+#    - olimpiyat-frontend > Settings > Custom Domains
+#    - Add Custom Domain: www.olimpiyatyuzme.com
+#    - Add Custom Domain: olimpiyatyuzme.com (redirect to www)
+#    - DNS: CNAME www -> olimpiyat-frontend.onrender.com
+#    - DNS: CNAME @ -> olimpiyat-frontend.onrender.com (veya A record)
+#
+# ═══════════════════════════════════════════════════════════════════════════════

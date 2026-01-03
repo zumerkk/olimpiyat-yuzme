@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Enterprise Configuration v3.0
-//                    Optimized for Render.com Cold Starts
+//                         Enterprise Configuration v3.1
+//                    Production Ready - olimpiyatyuzme.com
 // ═══════════════════════════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -18,26 +18,15 @@ const config = {
   // ─────────────────────────────────────────────────────────────────────────────
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/olimpiyat_yuzme',
   MONGODB_OPTIONS: {
-    // Connection pooling
     maxPoolSize: 10,
     minPoolSize: 2,
-    
-    // Render cold start için artırılmış timeout'lar (kritik!)
-    serverSelectionTimeoutMS: 30000,  // 30 saniye (önceki: 5 saniye)
-    connectTimeoutMS: 30000,          // 30 saniye
-    socketTimeoutMS: 60000,           // 60 saniye
-    
-    // Network settings
+    serverSelectionTimeoutMS: 30000,
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 60000,
     family: 4,
-    
-    // Write concern
     retryWrites: true,
     w: 'majority',
-    
-    // Heartbeat
     heartbeatFrequencyMS: 10000,
-    
-    // Auto reconnect
     autoIndex: true,
   },
   
@@ -58,9 +47,19 @@ const config = {
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // CORS
+  // CORS - Production domains
   // ─────────────────────────────────────────────────────────────────────────────
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+  ALLOWED_ORIGINS: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://olimpiyat-frontend.onrender.com',
+    'https://olimpiyat-backend.onrender.com',
+    // Custom Domain
+    'https://olimpiyatyuzme.com',
+    'https://www.olimpiyatyuzme.com',
+    'https://api.olimpiyatyuzme.com',
+  ],
   CORS_OPTIONS: {
     credentials: true,
     optionsSuccessStatus: 200,
@@ -69,11 +68,11 @@ const config = {
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // Rate Limiting - Public endpoints için daha gevşek
+  // Rate Limiting
   // ─────────────────────────────────────────────────────────────────────────────
   RATE_LIMIT: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 200, // Artırıldı
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 200,
     message: {
       success: false,
       message: 'Çok fazla istek gönderdiniz. Lütfen daha sonra tekrar deneyin.'
@@ -82,10 +81,9 @@ const config = {
     legacyHeaders: false
   },
   
-  // Public registration için ayrı rate limit
   PUBLIC_RATE_LIMIT: {
     windowMs: 15 * 60 * 1000,
-    max: 50, // Public form için
+    max: 50,
     message: {
       success: false,
       message: 'Çok fazla kayıt denemesi. Lütfen bekleyin.'
@@ -94,9 +92,6 @@ const config = {
     legacyHeaders: false
   },
   
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Auth Rate Limiting
-  // ─────────────────────────────────────────────────────────────────────────────
   AUTH_RATE_LIMIT: {
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -150,13 +145,13 @@ const config = {
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // Server Warmup Settings (Render cold start için)
+  // Server Warmup Settings
   // ─────────────────────────────────────────────────────────────────────────────
   WARMUP: {
     enabled: true,
-    startupDelay: 2000,     // Server başladıktan 2 saniye sonra
-    preconnectAttempts: 3,  // MongoDB'ye 3 kez bağlanmayı dene
-    healthCheckCache: 5000  // Health check cache süresi (ms)
+    startupDelay: 2000,
+    preconnectAttempts: 3,
+    healthCheckCache: 5000
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
