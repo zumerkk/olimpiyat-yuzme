@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const mongoose = require('mongoose');
+const config = require('../config/config');
 
 const athleteSchema = new mongoose.Schema({
   // Sporcu Bilgileri
@@ -106,14 +107,18 @@ const athleteSchema = new mongoose.Schema({
   
   // ═══════════════════════════════════════════════════════════════════════════
   
-  // Ücret bilgisi
+  // Ücret bilgisi (Kişiye özel ayarlanabilir)
   monthlyFee: {
     type: Number,
-    default: 1500 // Varsayılan aylık ücret
+    default: function() {
+      return config.PRICING?.DEFAULT_MONTHLY_FEE || 5000;
+    }
   },
   packageFee: {
     type: Number,
-    default: 1200 // Varsayılan 8 seanslık paket ücreti
+    default: function() {
+      return config.PRICING?.DEFAULT_PACKAGE_FEE || 4000;
+    }
   },
   
   // Sağlık Bilgileri

@@ -122,9 +122,10 @@ logger.logAuth = (action, email, success = true) => {
   logger[level](`Auth ${action}`, { email, success });
 };
 
-logger.logSMS = (phone, success, message = '') => {
+logger.logSMS = (phone, success, message = '', type = 'custom') => {
   const level = success ? 'info' : 'warn';
-  logger[level](`SMS sent`, { phone: phone.slice(-4), success, message });
+  const maskedPhone = phone ? phone.slice(-4) : 'N/A';
+  logger[level](`SMS ${success ? 'sent' : 'failed'}`, { phone: maskedPhone, success, message, type });
 };
 
 module.exports = logger;

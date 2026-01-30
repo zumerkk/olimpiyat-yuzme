@@ -20,7 +20,7 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/')
+      navigate('/panel')
     }
   }, [isAuthenticated, navigate])
 
@@ -38,7 +38,7 @@ export default function Login() {
 
     if (result.success) {
       toast.success('Giriş başarılı!')
-      navigate('/')
+      navigate('/panel')
     } else {
       toast.error(result.message)
     }
@@ -195,16 +195,6 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Demo Credentials */}
-              <div className="mt-6 p-4 bg-primary-50 rounded-xl border border-primary-100">
-                <p className="text-xs text-primary-700 font-medium mb-2">Demo Giriş Bilgileri:</p>
-                <p className="text-xs text-primary-600">
-                  E-posta: <code className="bg-primary-100 px-1.5 py-0.5 rounded">admin@olimpiyatyuzme.com</code>
-                </p>
-                <p className="text-xs text-primary-600 mt-1">
-                  Şifre: <code className="bg-primary-100 px-1.5 py-0.5 rounded">OlimpiyatAdmin2024!</code>
-                </p>
-              </div>
             </div>
           </div>
 

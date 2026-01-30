@@ -10,6 +10,7 @@ import { useAuthStore } from './store/authStore'
 import AdminLayout from './layouts/AdminLayout'
 
 // Pages
+import HomePage from './pages/HomePage'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Athletes from './pages/Athletes'
@@ -21,6 +22,7 @@ import Notifications from './pages/Notifications'
 import Registrations from './pages/Registrations'
 import Settings from './pages/Settings'
 import PublicRegistration from './pages/PublicRegistration'
+import SMS from './pages/SMS'
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -48,11 +50,12 @@ function App() {
   return (
     <Routes>
       {/* Public Routes */}
+      <Route path="/" element={<HomePage />} />
       <Route path="/giris" element={<Login />} />
       <Route path="/kayit" element={<PublicRegistration />} />
       
       {/* Protected Admin Routes */}
-      <Route path="/" element={
+      <Route path="/panel" element={
         <ProtectedRoute>
           <AdminLayout />
         </ProtectedRoute>
@@ -65,6 +68,7 @@ function App() {
         <Route path="aylik-odemeler" element={<MonthlyPayments />} />
         <Route path="bildirimler" element={<Notifications />} />
         <Route path="kayitlar" element={<Registrations />} />
+        <Route path="sms" element={<SMS />} />
         <Route path="ayarlar" element={<Settings />} />
       </Route>
       

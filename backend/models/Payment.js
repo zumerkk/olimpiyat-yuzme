@@ -1,9 +1,41 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
 //                         Ödeme Model - MongoDB Schema
+//                    Kısmi Ödeme Desteği ile Güncellenmiş v2.0
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const mongoose = require('mongoose');
+const config = require('../config/config');
+
+// Kısmi Ödeme Alt Şeması
+const partialPaymentSchema = new mongoose.Schema({
+  amount: {
+    type: Number,
+    required: true,
+    min: [0, 'Tutar negatif olamaz']
+  },
+  paymentDate: {
+    type: Date,
+    default: Date.now
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['Nakit', 'Kredi Kartı', 'Havale/EFT', 'Diğer'],
+    default: 'Nakit'
+  },
+  receiptNumber: {
+    type: String,
+    trim: true
+  },
+  notes: {
+    type: String,
+    trim: true
+  },
+  processedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
+  }
+}, { _id: true, timestamps: true });
 
 const paymentSchema = new mongoose.Schema({
   // Sporcu
@@ -20,12 +52,22 @@ const paymentSchema = new mongoose.Schema({
     required: [true, 'Ödeme tipi zorunludur']
   },
   
-  // Ödeme Tutarı
+  // Beklenen Tutar (Örn: 5000₺)
   amount: {
     type: Number,
     required: [true, 'Ödeme tutarı zorunludur'],
     min: [0, 'Tutar negatif olamaz']
   },
+  
+  // Ödenen Toplam Tutar (Kısmi ödemelerin toplamı)
+  paidAmount: {
+    type: Number,
+    default: 0,
+    min: [0, 'Tutar negatif olamaz']
+  },
+  
+  // Kısmi Ödemeler Listesi
+  partialPayments: [partialPaymentSchema],
   
   // Ödeme Dönemi (Aylık için)
   period: {
@@ -47,7 +89,7 @@ const paymentSchema = new mongoose.Schema({
     required: [true, 'Vade tarihi zorunludur']
   },
   
-  // Ödeme Tarihi
+  // Son Ödeme Tarihi (Tam ödeme yapıldığında)
   paymentDate: {
     type: Date,
     default: null
@@ -56,24 +98,24 @@ const paymentSchema = new mongoose.Schema({
   // Ödeme Durumu
   status: {
     type: String,
-    enum: ['Beklemede', 'Ödendi', 'Gecikmiş', 'İptal'],
+    enum: ['Beklemede', 'Kısmi Ödeme', 'Ödendi', 'Gecikmiş', 'İptal'],
     default: 'Beklemede'
   },
   
-  // Ödeme Yöntemi
+  // Son Ödeme Yöntemi (geriye uyumluluk için)
   paymentMethod: {
     type: String,
     enum: ['Nakit', 'Kredi Kartı', 'Havale/EFT', 'Diğer'],
     default: null
   },
   
-  // Makbuz/Dekont No
+  // Makbuz/Dekont No (geriye uyumluluk için)
   receiptNumber: {
     type: String,
     trim: true
   },
   
-  // İşlemi Yapan Admin
+  // Son İşlemi Yapan Admin
   processedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin'
@@ -106,6 +148,17 @@ paymentSchema.virtual('periodName').get(function() {
   return `${months[this.period.month - 1]} ${this.period.year}`;
 });
 
+// Kalan Borç virtual (Beklenen - Ödenen)
+paymentSchema.virtual('remainingBalance').get(function() {
+  return Math.max(0, this.amount - (this.paidAmount || 0));
+});
+
+// Ödeme yüzdesi virtual
+paymentSchema.virtual('paidPercentage').get(function() {
+  if (this.amount === 0) return 100;
+  return Math.round(((this.paidAmount || 0) / this.amount) * 100);
+});
+
 // Gecikme gün sayısı virtual
 paymentSchema.virtual('overdueDays').get(function() {
   if (this.status === 'Ödendi') return 0;
@@ -125,15 +178,23 @@ paymentSchema.virtual('daysUntilDue').get(function() {
 
 // Ödeme öncesi - durum güncelleme
 paymentSchema.pre('save', function(next) {
-  if (this.paymentDate && this.status === 'Beklemede') {
-    this.status = 'Ödendi';
-  }
+  // Ödenen tutara göre durum belirleme
+  const remaining = this.amount - (this.paidAmount || 0);
   
-  // Gecikme kontrolü
-  if (this.status !== 'Ödendi' && this.status !== 'İptal') {
+  if (remaining <= 0) {
+    // Tam ödendi
+    this.status = 'Ödendi';
+    if (!this.paymentDate) {
+      this.paymentDate = new Date();
+    }
+  } else if (this.paidAmount > 0) {
+    // Kısmi ödeme yapılmış
+    this.status = 'Kısmi Ödeme';
+  } else {
+    // Hiç ödeme yok - gecikme kontrolü
     const now = new Date();
     const due = new Date(this.dueDate);
-    if (now > due) {
+    if (now > due && this.status !== 'İptal') {
       this.status = 'Gecikmiş';
     }
   }
@@ -160,7 +221,8 @@ paymentSchema.statics.createMonthlyPayment = async function(athlete) {
   return await this.create({
     athlete: athlete._id,
     paymentType: 'Aylık',
-    amount: athlete.monthlyFee || 1500,
+    amount: athlete.monthlyFee || config.PRICING.DEFAULT_MONTHLY_FEE,
+    paidAmount: 0,
     period: {
       month: dueDate.getMonth() + 1,
       year: dueDate.getFullYear()
@@ -176,10 +238,44 @@ paymentSchema.statics.createPackagePayment = async function(athlete) {
   return await this.create({
     athlete: athlete._id,
     paymentType: '8 Seanslık',
-    amount: athlete.packageFee || 1200,
+    amount: athlete.packageFee || config.PRICING.DEFAULT_PACKAGE_FEE,
+    paidAmount: 0,
     packageNumber: packageNumber,
     dueDate: new Date() // Hemen ödenmeli
   });
+};
+
+// Kısmi ödeme ekle
+paymentSchema.methods.addPartialPayment = async function(paymentData) {
+  const { amount, paymentMethod, receiptNumber, notes, processedBy } = paymentData;
+  
+  // Kalan borçtan fazla ödeme yapılamaz
+  const remaining = this.amount - (this.paidAmount || 0);
+  if (amount > remaining) {
+    throw new Error(`Kalan borç ${remaining}₺, bu tutardan fazla ödeme yapılamaz`);
+  }
+  
+  // Kısmi ödeme kaydı ekle
+  this.partialPayments.push({
+    amount,
+    paymentDate: new Date(),
+    paymentMethod: paymentMethod || 'Nakit',
+    receiptNumber,
+    notes,
+    processedBy
+  });
+  
+  // Toplam ödenen tutarı güncelle
+  this.paidAmount = (this.paidAmount || 0) + amount;
+  
+  // Son ödeme bilgilerini de güncelle (geriye uyumluluk)
+  this.paymentMethod = paymentMethod;
+  this.receiptNumber = receiptNumber;
+  this.notes = notes;
+  this.processedBy = processedBy;
+  
+  await this.save();
+  return this;
 };
 
 module.exports = mongoose.model('Payment', paymentSchema);

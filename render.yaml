@@ -1,7 +1,12 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-#                         Render.com Blueprint v3.0
-#                    Production - olimpiyatyuzme.com
+#                         Render.com Blueprint v3.1
+#                    Production Ready - Custom Domain Desteği
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# NOT: Domain alındıktan sonra URL'leri güncellemeniz gerekecek!
+# Şu an Render'ın otomatik sağladığı URL'ler kullanılıyor.
+#
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -11,14 +16,15 @@ services:
   - type: web
     name: olimpiyat-backend
     runtime: node
-    plan: free  # Starter ($7/ay) veya üstü önerilir custom domain için
+    plan: free
     rootDir: backend
+    region: frankfurt  # Türkiye'ye yakın
     
     # Build Configuration
-    buildCommand: npm ci --production
+    buildCommand: npm ci --omit=dev
     startCommand: node server.js
     
-    # Health Check
+    # Health Check - Backend uyanık tutmak için
     healthCheckPath: /api/ping
     
     # Environment Variables
@@ -29,29 +35,50 @@ services:
         value: 5001
       - key: NODE_OPTIONS
         value: "--max-old-space-size=512"
+      # MongoDB URI - Render Dashboard'dan girilmeli (Secret)
       - key: MONGODB_URI
-        sync: false  # Render dashboard'dan girilecek
+        sync: false
+      # JWT Secret - Otomatik güçlü değer oluştur
       - key: JWT_SECRET
         generateValue: true
+      # CORS için Frontend URL (Render URL)
+      # Domain alındıktan sonra: https://www.olimpiyatyuzme.com
       - key: FRONTEND_URL
-        value: https://www.olimpiyatyuzme.com
+        value: https://olimpiyat-frontend.onrender.com
+      # Admin bilgileri
       - key: ADMIN_EMAIL
         value: admin@olimpiyatyuzme.com
+      - key: ADMIN_PASSWORD
+        sync: false
+      # SMS Ayarları - Render Dashboard'dan girilmeli
+      - key: SMS_ENABLED
+        value: "true"
+      - key: SMS_USERNAME
+        sync: false
+      - key: SMS_PASSWORD
+        sync: false
+      - key: SMS_SENDER
+        value: "MURAT UCAR"
+      - key: SMS_API_URL
+        value: "https://www.bozkurtsms.com.tr/services/api.php?islem=sms"
+      - key: AUTO_SMS_ENABLED
+        value: "true"
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Frontend (Static Site)
+  # Frontend (Static Site) - Her zaman ücretsiz
   # ─────────────────────────────────────────────────────────────────────────────
   - type: web
     name: olimpiyat-frontend
     runtime: static
-    plan: free  # Static site her zaman ücretsiz
+    plan: free
     rootDir: frontend
+    region: frankfurt
     
     # Build Configuration
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     
-    # Headers
+    # Security Headers
     headers:
       - path: /*
         name: X-Frame-Options
@@ -62,6 +89,9 @@ services:
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-XSS-Protection
+        value: "1; mode=block"
       - path: /assets/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
@@ -69,33 +99,57 @@ services:
         name: Cache-Control
         value: no-cache, no-store, must-revalidate
     
-    # SPA Routing
+    # SPA Routing - Tüm route'ları index.html'e yönlendir
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     
     # Environment Variables
+    # API URL - Domain alındıktan sonra güncelle
     envVars:
       - key: VITE_API_URL
-        value: https://api.olimpiyatyuzme.com/api
+        value: https://olimpiyat-backend.onrender.com/api
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CUSTOM DOMAIN YAPILANDIRMASI
+# 📋 RENDER DASHBOARD'DA YAPILACAKLAR
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Render Dashboard'da yapılacaklar:
+# 1. Backend Environment Variables (Secret olarak girilecek):
+#    - MONGODB_URI: mongodb+srv://olimpiyatsporklub:2002.2002@olimpiyatyuzme.tsd5d6y.mongodb.net/olimpiyat_yuzme?retryWrites=true&w=majority&appName=olimpiyatyuzme
+#    - ADMIN_PASSWORD: OlimpiyatAdmin2024!
+#    - SMS_USERNAME: 05303331182
+#    - SMS_PASSWORD: bozkurt
 #
-# 1. BACKEND için (api.olimpiyatyuzme.com):
-#    - olimpiyat-backend > Settings > Custom Domains
-#    - Add Custom Domain: api.olimpiyatyuzme.com
-#    - DNS: CNAME api -> olimpiyat-backend.onrender.com
+# 2. İlk Deploy Sonrası Test:
+#    - Backend Health: https://olimpiyat-backend.onrender.com/api/health
+#    - Frontend: https://olimpiyat-frontend.onrender.com
 #
-# 2. FRONTEND için (www.olimpiyatyuzme.com):
-#    - olimpiyat-frontend > Settings > Custom Domains
-#    - Add Custom Domain: www.olimpiyatyuzme.com
-#    - Add Custom Domain: olimpiyatyuzme.com (redirect to www)
-#    - DNS: CNAME www -> olimpiyat-frontend.onrender.com
-#    - DNS: CNAME @ -> olimpiyat-frontend.onrender.com (veya A record)
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🌐 CUSTOM DOMAIN EKLEME (Domain Alındıktan Sonra)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# ADIM 1: Domain Satın Al (Önerilen: Natro, İsimtescil, GoDaddy)
+#
+# ADIM 2: DNS Ayarları (Domain sağlayıcı panelinde):
+#    | Tip    | İsim | Değer                               |
+#    |--------|------|-------------------------------------|
+#    | CNAME  | www  | olimpiyat-frontend.onrender.com     |
+#    | CNAME  | api  | olimpiyat-backend.onrender.com      |
+#    | A      | @    | Render IP (dashboard'dan al)        |
+#
+# ADIM 3: Render Dashboard'da Custom Domain Ekle:
+#    - Backend: Settings > Custom Domains > api.olimpiyatyuzme.com
+#    - Frontend: Settings > Custom Domains > www.olimpiyatyuzme.com
+#    - Frontend: Settings > Custom Domains > olimpiyatyuzme.com (redirect)
+#
+# ADIM 4: Environment Variables Güncelle:
+#    - Backend FRONTEND_URL: https://www.olimpiyatyuzme.com
+#    - Frontend VITE_API_URL: https://api.olimpiyatyuzme.com/api
+#    - Frontend'i yeniden deploy et (Settings > Deploy > Manual Deploy)
+#
+# ADIM 5: SSL Sertifikası (Otomatik):
+#    - Render otomatik Let's Encrypt SSL sertifikası sağlar
+#    - DNS yayıldıktan sonra (5-30 dk) otomatik aktif olur
 #
 # ═══════════════════════════════════════════════════════════════════════════════

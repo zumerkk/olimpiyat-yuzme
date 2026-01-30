@@ -51,14 +51,19 @@ const config = {
   // ─────────────────────────────────────────────────────────────────────────────
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
   ALLOWED_ORIGINS: [
+    // Development
     'http://localhost:5173',
     'http://localhost:3000',
+    'http://localhost:5001',
+    // Render.com URLs (otomatik oluşturulan)
     'https://olimpiyat-frontend.onrender.com',
     'https://olimpiyat-backend.onrender.com',
-    // Custom Domain
+    // Custom Domain (domain alındıktan sonra aktif)
     'https://olimpiyatyuzme.com',
     'https://www.olimpiyatyuzme.com',
     'https://api.olimpiyatyuzme.com',
+    'http://olimpiyatyuzme.com',
+    'http://www.olimpiyatyuzme.com',
   ],
   CORS_OPTIONS: {
     credentials: true,
@@ -104,13 +109,24 @@ const config = {
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // NetGSM SMS
+  // BozkurtSMS - www.bozkurtsms.com.tr (Network Haberleşme Altyapısı)
+  // API Docs: XML POST to https://www.bozkurtsms.com.tr/services/api.php?islem=sms
   // ─────────────────────────────────────────────────────────────────────────────
+  SMS: {
+    enabled: process.env.SMS_ENABLED === 'true',
+    provider: 'bozkurtsms',
+    username: process.env.SMS_USERNAME || '05303331182',
+    password: process.env.SMS_PASSWORD || 'bozkurt',
+    sender: process.env.SMS_SENDER || 'MURAT UÇAR',  // Türkçe Ç ile!
+    apiUrl: process.env.SMS_API_URL || 'https://www.bozkurtsms.com.tr/services/api.php?islem=sms'
+  },
+  
+  // NetGSM SMS (geriye uyumluluk için - deprecated)
   NETGSM: {
-    enabled: process.env.NETGSM_ENABLED === 'true',
-    usercode: process.env.NETGSM_USERCODE || '',
-    password: process.env.NETGSM_PASSWORD || '',
-    msgheader: process.env.NETGSM_MSGHEADER || '',
+    enabled: process.env.NETGSM_ENABLED === 'true' || process.env.SMS_ENABLED === 'true',
+    usercode: process.env.NETGSM_USERCODE || process.env.SMS_USERNAME || '',
+    password: process.env.NETGSM_PASSWORD || process.env.SMS_PASSWORD || '',
+    msgheader: process.env.NETGSM_MSGHEADER || process.env.SMS_SENDER || '',
     apiUrl: 'https://api.netgsm.com.tr/sms/send/get'
   },
   
@@ -125,11 +141,21 @@ const config = {
   },
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // Notifications
+  // Notifications & SMS Hatırlatma Ayarları
   // ─────────────────────────────────────────────────────────────────────────────
   NOTIFICATIONS: {
-    PAYMENT_REMINDER_DAYS: parseInt(process.env.PAYMENT_REMINDER_DAYS, 10) || 7,
-    SESSION_REMINDER_DAYS: parseInt(process.env.SESSION_REMINDER_DAYS, 10) || 3,
+    PAYMENT_REMINDER_DAYS: parseInt(process.env.PAYMENT_REMINDER_DAYS, 10) || 1,  // Ödeme öncesi kaç gün (1 gün)
+    SESSION_WARNING_THRESHOLD: parseInt(process.env.SESSION_WARNING_THRESHOLD, 10) || 1, // Kaç seans kala uyarı
+    PAYMENT_EXPIRED_GRACE_DAYS: parseInt(process.env.PAYMENT_EXPIRED_GRACE_DAYS, 10) || 3, // Ödeme sonrası kaç gün süre
+    AUTO_SMS_ENABLED: process.env.AUTO_SMS_ENABLED !== 'false', // Otomatik SMS aktif mi
+  },
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Ücret Ayarları - Varsayılan değerler
+  // ─────────────────────────────────────────────────────────────────────────────
+  PRICING: {
+    DEFAULT_MONTHLY_FEE: parseInt(process.env.DEFAULT_MONTHLY_FEE, 10) || 5000,     // Aylık üyelik varsayılan ücreti
+    DEFAULT_PACKAGE_FEE: parseInt(process.env.DEFAULT_PACKAGE_FEE, 10) || 5000,     // 8 Seanslık paket varsayılan ücreti
   },
   
   // ─────────────────────────────────────────────────────────────────────────────

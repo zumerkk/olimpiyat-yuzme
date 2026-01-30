@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Ödeme Takip Sistemi
+//                         Ödeme Takip Sistemi v2.0
+//                    Kısmi Ödeme & Eksik Bakiye Desteği
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react'
@@ -9,10 +10,11 @@ import api, { formatDate, formatCurrency, getMonthName } from '../utils/api'
 import toast from 'react-hot-toast'
 import {
   Plus, CreditCard, CheckCircle, Clock, AlertTriangle, X,
-  Calendar, Package, RefreshCw, ChevronLeft, ChevronRight, Zap
+  Calendar, Package, RefreshCw, ChevronLeft, ChevronRight, Zap,
+  DollarSign, PieChart, TrendingDown, History, Percent
 } from 'lucide-react'
 
-const PAYMENT_STATUSES = ['Ödendi', 'Beklemede', 'Gecikmiş']
+const PAYMENT_STATUSES = ['Ödendi', 'Beklemede', 'Gecikmiş', 'Kısmi Ödeme']
 const PAYMENT_METHODS = ['Nakit', 'Kredi Kartı', 'Havale/EFT', 'Diğer']
 const PAYMENT_TYPES = ['Aylık', '8 Seanslık']
 
@@ -25,9 +27,16 @@ export default function Payments() {
   const [filters, setFilters] = useState({ status: '', paymentType: '' })
   const [showModal, setShowModal] = useState(false)
   const [showPayModal, setShowPayModal] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
   const [selectedPayment, setSelectedPayment] = useState(null)
   const [formData, setFormData] = useState({})
-  const [payData, setPayData] = useState({ paymentMethod: 'Nakit', receiptNumber: '', notes: '' })
+  const [payData, setPayData] = useState({ 
+    paymentMethod: 'Nakit', 
+    receiptNumber: '', 
+    notes: '',
+    amount: 0,
+    isPartial: false 
+  })
   const [generatingMonthly, setGeneratingMonthly] = useState(false)
 
   useEffect(() => {
@@ -86,14 +95,36 @@ export default function Payments() {
     }
   }
 
-  const handlePayment = async (e) => {
+  // Tam ödeme al
+  const handleFullPayment = async (e) => {
     e.preventDefault()
     try {
-      await api.post(`/payments/${selectedPayment._id}/pay`, payData)
-      toast.success('Ödeme alındı')
-      setShowPayModal(false)
-      setSelectedPayment(null)
-      setPayData({ paymentMethod: 'Nakit', receiptNumber: '', notes: '' })
+      await api.post(`/payments/${selectedPayment._id}/pay`, {
+        paymentMethod: payData.paymentMethod,
+        receiptNumber: payData.receiptNumber,
+        notes: payData.notes
+      })
+      toast.success('Ödeme tamamen alındı!')
+      closePayModal()
+      fetchPayments()
+      fetchStats()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'İşlem başarısız')
+    }
+  }
+
+  // Kısmi ödeme al
+  const handlePartialPayment = async (e) => {
+    e.preventDefault()
+    try {
+      const response = await api.post(`/payments/${selectedPayment._id}/partial-pay`, {
+        amount: parseFloat(payData.amount),
+        paymentMethod: payData.paymentMethod,
+        receiptNumber: payData.receiptNumber,
+        notes: payData.notes
+      })
+      toast.success(response.data.message)
+      closePayModal()
       fetchPayments()
       fetchStats()
     } catch (error) {
@@ -118,8 +149,27 @@ export default function Payments() {
   }
 
   const openPayModal = (payment) => {
+    const remaining = payment.amount - (payment.paidAmount || 0)
     setSelectedPayment(payment)
+    setPayData({ 
+      paymentMethod: 'Nakit', 
+      receiptNumber: '', 
+      notes: '',
+      amount: remaining,
+      isPartial: false
+    })
     setShowPayModal(true)
+  }
+
+  const closePayModal = () => {
+    setShowPayModal(false)
+    setSelectedPayment(null)
+    setPayData({ paymentMethod: 'Nakit', receiptNumber: '', notes: '', amount: 0, isPartial: false })
+  }
+
+  const openHistoryModal = (payment) => {
+    setSelectedPayment(payment)
+    setShowHistoryModal(true)
   }
 
   const openCreateModal = () => {
@@ -132,7 +182,7 @@ export default function Payments() {
     setFormData({
       athlete: '',
       paymentType: 'Aylık',
-      amount: 1500,
+      amount: 5000,
       period: { month: dueDate.getMonth() + 1, year: dueDate.getFullYear() },
       dueDate: dueDate.toISOString().split('T')[0]
     })
@@ -144,6 +194,7 @@ export default function Payments() {
       case 'Ödendi': return <CheckCircle className="w-4 h-4" />
       case 'Beklemede': return <Clock className="w-4 h-4" />
       case 'Gecikmiş': return <AlertTriangle className="w-4 h-4" />
+      case 'Kısmi Ödeme': return <PieChart className="w-4 h-4" />
       default: return null
     }
   }
@@ -153,8 +204,20 @@ export default function Payments() {
       case 'Ödendi': return 'badge-success'
       case 'Beklemede': return 'badge-warning'
       case 'Gecikmiş': return 'badge-danger'
+      case 'Kısmi Ödeme': return 'badge-info'
       default: return 'badge-info'
     }
+  }
+
+  // Kalan borç hesapla
+  const getRemainingBalance = (payment) => {
+    return Math.max(0, payment.amount - (payment.paidAmount || 0))
+  }
+
+  // Ödeme yüzdesi hesapla
+  const getPaidPercentage = (payment) => {
+    if (payment.amount === 0) return 100
+    return Math.round(((payment.paidAmount || 0) / payment.amount) * 100)
   }
 
   return (
@@ -163,7 +226,7 @@ export default function Payments() {
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
           <h1 className="text-2xl font-display font-bold text-gray-900">Ödemeler</h1>
-          <p className="text-gray-500 text-sm mt-1">Ödeme takibi ve yönetimi</p>
+          <p className="text-gray-500 text-sm mt-1">Ödeme takibi, kısmi ödeme ve borç yönetimi</p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -187,7 +250,7 @@ export default function Payments() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="card p-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
@@ -229,15 +292,26 @@ export default function Payments() {
 
           <div className="card p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
-                <CreditCard className="w-6 h-6 text-primary-600" />
+              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                <PieChart className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Aylık / Paket</p>
-                <p className="text-xl font-bold text-gray-900">
-                  {stats.byType?.['Aylık']?.count || 0} / {stats.byType?.['8 Seanslık']?.count || 0}
-                </p>
-                <p className="text-xs text-primary-600">aktif üyelik</p>
+                <p className="text-sm text-gray-500">Kısmi Ödeme</p>
+                <p className="text-xl font-bold text-gray-900">{formatCurrency(stats.partialPayments?.totalRemaining || 0)}</p>
+                <p className="text-xs text-blue-600">{stats.partialPayments?.count || 0} ödeme</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-4 bg-gradient-to-br from-red-50 to-orange-50 border-red-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-red-500 flex items-center justify-center">
+                <TrendingDown className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-red-700">Toplam Eksik</p>
+                <p className="text-xl font-bold text-red-900">{formatCurrency(stats.totalRemainingBalance)}</p>
+                <p className="text-xs text-red-600">Tahsil edilmemiş</p>
               </div>
             </div>
           </div>
@@ -283,11 +357,15 @@ export default function Payments() {
             <p className="text-sm text-gray-600 mt-1">
               <span className="inline-flex items-center gap-1 mr-3">
                 <Calendar className="w-4 h-4 text-blue-500" />
-                <strong>Aylık:</strong> Her ayın 15'inde ödeme
+                <strong>Aylık:</strong> Her ayın 15'inde ödeme (Varsayılan: 5.000₺)
+              </span>
+              <span className="inline-flex items-center gap-1 mr-3">
+                <Package className="w-4 h-4 text-purple-500" />
+                <strong>8 Seanslık:</strong> Paket bitince ödeme (Varsayılan: 4.000₺)
               </span>
               <span className="inline-flex items-center gap-1">
-                <Package className="w-4 h-4 text-purple-500" />
-                <strong>8 Seanslık:</strong> 8 seans bitince ödeme
+                <PieChart className="w-4 h-4 text-blue-500" />
+                <strong>Kısmi Ödeme:</strong> Parça parça ödeme alınabilir
               </span>
             </p>
           </div>
@@ -314,62 +392,105 @@ export default function Payments() {
                     <th>Sporcu</th>
                     <th>Ödeme Tipi</th>
                     <th>Dönem / Paket</th>
-                    <th>Tutar</th>
-                    <th>Vade</th>
+                    <th>Beklenen</th>
+                    <th>Ödenen</th>
+                    <th>Kalan Borç</th>
                     <th>Durum</th>
                     <th className="text-right">İşlem</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payments.map((payment, index) => (
-                    <motion.tr 
-                      key={payment._id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.03 }}
-                    >
-                      <td>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm">
-                            {payment.athlete?.firstName?.charAt(0)}
+                  {payments.map((payment, index) => {
+                    const remaining = getRemainingBalance(payment)
+                    const paidPercent = getPaidPercentage(payment)
+                    
+                    return (
+                      <motion.tr 
+                        key={payment._id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.03 }}
+                      >
+                        <td>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm">
+                              {payment.athlete?.firstName?.charAt(0)}
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-900">
+                                {payment.athlete?.firstName} {payment.athlete?.lastName}
+                              </span>
+                              <p className="text-xs text-gray-500">{payment.athlete?.phone}</p>
+                            </div>
                           </div>
-                          <div>
-                            <span className="font-medium text-gray-900">
-                              {payment.athlete?.firstName} {payment.athlete?.lastName}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            {payment.paymentType === 'Aylık' ? (
+                              <Calendar className="w-4 h-4 text-blue-500" />
+                            ) : (
+                              <Package className="w-4 h-4 text-purple-500" />
+                            )}
+                            <span className={`badge ${
+                              payment.paymentType === 'Aylık' ? 'badge-info' : 'badge-primary'
+                            }`}>
+                              {payment.paymentType}
                             </span>
-                            <p className="text-xs text-gray-500">{payment.athlete?.phone}</p>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex items-center gap-2">
+                        </td>
+                        <td className="font-medium">
                           {payment.paymentType === 'Aylık' ? (
-                            <Calendar className="w-4 h-4 text-blue-500" />
+                            <span>{getMonthName(payment.period?.month)} {payment.period?.year}</span>
                           ) : (
-                            <Package className="w-4 h-4 text-purple-500" />
+                            <span>{payment.packageNumber}. Paket</span>
                           )}
-                          <span className={`badge ${
-                            payment.paymentType === 'Aylık' ? 'badge-info' : 'badge-primary'
-                          }`}>
-                            {payment.paymentType}
+                        </td>
+                        <td className="font-semibold text-gray-900">
+                          {formatCurrency(payment.amount)}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <span className={`font-semibold ${payment.paidAmount > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                              {formatCurrency(payment.paidAmount || 0)}
+                            </span>
+                            {payment.partialPayments?.length > 0 && (
+                              <button 
+                                onClick={() => openHistoryModal(payment)}
+                                className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                                title="Ödeme geçmişi"
+                              >
+                                <History className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          {remaining > 0 ? (
+                            <div>
+                              <span className="font-bold text-red-600">{formatCurrency(remaining)}</span>
+                              {payment.paidAmount > 0 && (
+                                <div className="mt-1">
+                                  <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-green-500 rounded-full transition-all"
+                                      style={{ width: `${paidPercent}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-gray-500">%{paidPercent}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-green-600 font-medium">Tamam ✓</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`badge ${getStatusClass(payment.status)} flex items-center gap-1 w-fit`}>
+                            {getStatusIcon(payment.status)}
+                            {payment.status}
                           </span>
-                        </div>
-                      </td>
-                      <td className="font-medium">
-                        {payment.paymentType === 'Aylık' ? (
-                          <span>{getMonthName(payment.period?.month)} {payment.period?.year}</span>
-                        ) : (
-                          <span>{payment.packageNumber}. Paket</span>
-                        )}
-                      </td>
-                      <td className="font-semibold text-gray-900">
-                        {formatCurrency(payment.amount)}
-                      </td>
-                      <td>
-                        <div className="text-sm">
-                          <span className="text-gray-900">{formatDate(payment.dueDate)}</span>
                           {payment.daysUntilDue !== null && payment.status !== 'Ödendi' && (
-                            <p className={`text-xs ${
+                            <p className={`text-xs mt-1 ${
                               payment.daysUntilDue < 0 ? 'text-red-500' : 
                               payment.daysUntilDue <= 3 ? 'text-amber-500' : 'text-gray-400'
                             }`}>
@@ -381,31 +502,25 @@ export default function Payments() {
                               }
                             </p>
                           )}
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`badge ${getStatusClass(payment.status)} flex items-center gap-1 w-fit`}>
-                          {getStatusIcon(payment.status)}
-                          {payment.status}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        {payment.status !== 'Ödendi' ? (
-                          <button
-                            onClick={() => openPayModal(payment)}
-                            className="btn-success btn-sm"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                            Ödeme Al
-                          </button>
-                        ) : (
-                          <span className="text-sm text-gray-400">
-                            {formatDate(payment.paymentDate)}
-                          </span>
-                        )}
-                      </td>
-                    </motion.tr>
-                  ))}
+                        </td>
+                        <td className="text-right">
+                          {payment.status !== 'Ödendi' ? (
+                            <button
+                              onClick={() => openPayModal(payment)}
+                              className="btn-success btn-sm"
+                            >
+                              <DollarSign className="w-4 h-4" />
+                              Ödeme Al
+                            </button>
+                          ) : (
+                            <span className="text-sm text-gray-400">
+                              {formatDate(payment.paymentDate)}
+                            </span>
+                          )}
+                        </td>
+                      </motion.tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -474,8 +589,8 @@ export default function Payments() {
                         athlete: e.target.value,
                         paymentType: athlete?.membershipType || 'Aylık',
                         amount: athlete?.membershipType === '8 Seanslık' 
-                          ? (athlete?.packageFee || 1200) 
-                          : (athlete?.monthlyFee || 1500)
+                          ? (athlete?.packageFee || 4000) 
+                          : (athlete?.monthlyFee || 5000)
                       })
                     }}
                     className="select"
@@ -484,7 +599,7 @@ export default function Payments() {
                     <option value="">Sporcu Seçin</option>
                     {athletes.map(a => (
                       <option key={a._id} value={a._id}>
-                        {a.firstName} {a.lastName} ({a.membershipType})
+                        {a.firstName} {a.lastName} ({a.membershipType}) - {formatCurrency(a.membershipType === '8 Seanslık' ? a.packageFee : a.monthlyFee)}
                       </option>
                     ))}
                   </select>
@@ -546,6 +661,9 @@ export default function Payments() {
                     className="input"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Tanıdıklara özel fiyat için tutarı değiştirin
+                  </p>
                 </div>
 
                 <div>
@@ -573,7 +691,7 @@ export default function Payments() {
         )}
       </AnimatePresence>
 
-      {/* Pay Modal */}
+      {/* Pay Modal - Kısmi / Tam Ödeme */}
       <AnimatePresence>
         {showPayModal && selectedPayment && (
           <motion.div
@@ -581,14 +699,14 @@ export default function Payments() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="modal-overlay"
-            onClick={() => setShowPayModal(false)}
+            onClick={closePayModal}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="modal-content"
+              className="modal-content max-w-lg"
             >
               <div className="p-5 border-b border-gray-100">
                 <h3 className="text-lg font-semibold text-gray-900">Ödeme Al</h3>
@@ -601,24 +719,72 @@ export default function Payments() {
                 </p>
               </div>
 
-              <form onSubmit={handlePayment} className="p-5 space-y-4">
-                <div className="p-4 bg-gradient-to-r from-primary-50 to-blue-50 rounded-xl text-center">
-                  <p className="text-sm text-primary-600 mb-1">Ödenecek Tutar</p>
-                  <p className="text-3xl font-bold text-primary-700">
-                    {formatCurrency(selectedPayment.amount)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {selectedPayment.paymentType === 'Aylık' ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Calendar className="w-3 h-3" /> Aylık Üyelik
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <Package className="w-3 h-3" /> 8 Seanslık Paket
-                      </span>
-                    )}
-                  </p>
+              <form onSubmit={payData.isPartial ? handlePartialPayment : handleFullPayment} className="p-5 space-y-4">
+                {/* Ödeme Özeti */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-gray-50 rounded-xl text-center">
+                    <p className="text-xs text-gray-500 mb-1">Beklenen</p>
+                    <p className="text-lg font-bold text-gray-700">{formatCurrency(selectedPayment.amount)}</p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-xl text-center">
+                    <p className="text-xs text-green-600 mb-1">Ödenen</p>
+                    <p className="text-lg font-bold text-green-700">{formatCurrency(selectedPayment.paidAmount || 0)}</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-xl text-center">
+                    <p className="text-xs text-red-600 mb-1">Kalan Borç</p>
+                    <p className="text-lg font-bold text-red-700">{formatCurrency(getRemainingBalance(selectedPayment))}</p>
+                  </div>
                 </div>
+
+                {/* Ödeme Tipi Seçimi */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayData({ ...payData, isPartial: false, amount: getRemainingBalance(selectedPayment) })}
+                    className={`flex-1 p-3 rounded-xl border-2 transition-all ${
+                      !payData.isPartial 
+                        ? 'border-green-500 bg-green-50 text-green-700' 
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <CheckCircle className={`w-5 h-5 mx-auto mb-1 ${!payData.isPartial ? 'text-green-500' : 'text-gray-400'}`} />
+                    <p className="font-medium text-sm">Tam Ödeme</p>
+                    <p className="text-xs opacity-70">{formatCurrency(getRemainingBalance(selectedPayment))}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayData({ ...payData, isPartial: true, amount: '' })}
+                    className={`flex-1 p-3 rounded-xl border-2 transition-all ${
+                      payData.isPartial 
+                        ? 'border-blue-500 bg-blue-50 text-blue-700' 
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <PieChart className={`w-5 h-5 mx-auto mb-1 ${payData.isPartial ? 'text-blue-500' : 'text-gray-400'}`} />
+                    <p className="font-medium text-sm">Kısmi Ödeme</p>
+                    <p className="text-xs opacity-70">Belirli tutar</p>
+                  </button>
+                </div>
+
+                {/* Kısmi Ödeme Tutarı */}
+                {payData.isPartial && (
+                  <div>
+                    <label className="label">Ödeme Tutarı (₺) *</label>
+                    <input
+                      type="number"
+                      value={payData.amount}
+                      onChange={(e) => setPayData({ ...payData, amount: e.target.value })}
+                      className="input"
+                      placeholder={`Max: ${getRemainingBalance(selectedPayment)}₺`}
+                      max={getRemainingBalance(selectedPayment)}
+                      min={1}
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Örn: 5000₺ borcun 3000₺'sini şimdi, kalanını sonra alın
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="label">Ödeme Yöntemi *</label>
@@ -654,25 +820,119 @@ export default function Payments() {
                   />
                 </div>
 
-                {selectedPayment.paymentType === '8 Seanslık' && (
+                {selectedPayment.paymentType === '8 Seanslık' && !payData.isPartial && (
                   <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
                     <p className="font-medium">📦 Paket Yenileme</p>
                     <p className="text-xs mt-1">
-                      Bu ödeme alındığında sporcunun 8 seans hakkı otomatik olarak yenilenecek.
+                      Tam ödeme alındığında sporcunun 8 seans hakkı otomatik olarak yenilenecek.
                     </p>
                   </div>
                 )}
 
                 <div className="flex justify-end gap-3 pt-4">
-                  <button type="button" onClick={() => setShowPayModal(false)} className="btn-secondary">
+                  <button type="button" onClick={closePayModal} className="btn-secondary">
                     İptal
                   </button>
-                  <button type="submit" className="btn-success">
-                    <CheckCircle className="w-5 h-5" />
-                    Ödemeyi Onayla
+                  <button type="submit" className={payData.isPartial ? 'btn-primary' : 'btn-success'}>
+                    {payData.isPartial ? (
+                      <>
+                        <PieChart className="w-5 h-5" />
+                        Kısmi Ödeme Al
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Tam Ödeme Al
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment History Modal */}
+      <AnimatePresence>
+        {showHistoryModal && selectedPayment && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="modal-overlay"
+            onClick={() => setShowHistoryModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="modal-content"
+            >
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Ödeme Geçmişi</h3>
+                  <p className="text-sm text-gray-500">
+                    {selectedPayment.athlete?.firstName} {selectedPayment.athlete?.lastName} - 
+                    {selectedPayment.paymentType === 'Aylık' 
+                      ? ` ${getMonthName(selectedPayment.period?.month)} ${selectedPayment.period?.year}`
+                      : ` ${selectedPayment.packageNumber}. Paket`
+                    }
+                  </p>
+                </div>
+                <button onClick={() => setShowHistoryModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
+                {/* Özet */}
+                <div className="grid grid-cols-3 gap-3 p-4 bg-gray-50 rounded-xl">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500">Beklenen</p>
+                    <p className="text-lg font-bold">{formatCurrency(selectedPayment.amount)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-green-600">Ödenen</p>
+                    <p className="text-lg font-bold text-green-600">{formatCurrency(selectedPayment.paidAmount || 0)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-red-600">Kalan</p>
+                    <p className="text-lg font-bold text-red-600">{formatCurrency(getRemainingBalance(selectedPayment))}</p>
+                  </div>
+                </div>
+
+                {/* Ödeme Listesi */}
+                <div className="space-y-3">
+                  {selectedPayment.partialPayments?.length > 0 ? (
+                    selectedPayment.partialPayments.map((pp, index) => (
+                      <div key={pp._id || index} className="flex items-center gap-4 p-3 bg-white border border-gray-100 rounded-lg">
+                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                          <DollarSign className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-green-600">{formatCurrency(pp.amount)}</p>
+                          <p className="text-xs text-gray-500">
+                            {formatDate(pp.paymentDate)} • {pp.paymentMethod}
+                            {pp.receiptNumber && ` • ${pp.receiptNumber}`}
+                          </p>
+                          {pp.notes && <p className="text-xs text-gray-400 mt-1">{pp.notes}</p>}
+                        </div>
+                        <span className="text-xs text-gray-400">#{index + 1}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center text-gray-500 py-4">Henüz ödeme yapılmamış</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-gray-100">
+                <button onClick={() => setShowHistoryModal(false)} className="btn-secondary w-full">
+                  Kapat
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -101,8 +101,8 @@ export default function Athletes() {
       email: athlete.email || '',
       address: athlete.address || '',
       membershipType: athlete.membershipType,
-      monthlyFee: athlete.monthlyFee || 1500,
-      packageFee: athlete.packageFee || 1200,
+      monthlyFee: athlete.monthlyFee || 5000,
+      packageFee: athlete.packageFee || 4000,
       status: athlete.status,
       guardian: athlete.guardian || {},
       healthInfo: athlete.healthInfo || {},
@@ -123,8 +123,8 @@ export default function Athletes() {
       email: '',
       address: '',
       membershipType: 'Aylık',
-      monthlyFee: 1500,
-      packageFee: 1200,
+      monthlyFee: 5000,
+      packageFee: 4000,
       status: 'Aktif',
       guardian: {},
       healthInfo: {},
@@ -523,27 +523,29 @@ export default function Athletes() {
                     </label>
                   </div>
 
-                  {/* Ücret Bilgileri */}
+                  {/* Ücret Bilgileri - Kişiye Özel Ayarlanabilir */}
                   <div className="grid sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-primary-100">
                     <div>
                       <label className="label">Aylık Ücret (₺)</label>
                       <input
                         type="number"
-                        value={formData.monthlyFee || 1500}
+                        value={formData.monthlyFee || 5000}
                         onChange={(e) => setFormData({ ...formData, monthlyFee: parseInt(e.target.value) })}
                         className="input"
                         min={0}
                       />
+                      <p className="text-xs text-gray-500 mt-1">Varsayılan: 5.000₺ (Tanıdıklara farklı fiyat girilebilir)</p>
                     </div>
                     <div>
                       <label className="label">8 Seanslık Paket Ücreti (₺)</label>
                       <input
                         type="number"
-                        value={formData.packageFee || 1200}
+                        value={formData.packageFee || 4000}
                         onChange={(e) => setFormData({ ...formData, packageFee: parseInt(e.target.value) })}
                         className="input"
                         min={0}
                       />
+                      <p className="text-xs text-gray-500 mt-1">Varsayılan: 4.000₺ (Tanıdıklara farklı fiyat girilebilir)</p>
                     </div>
                   </div>
                 </div>

@@ -11,6 +11,7 @@ const Athlete = require('../models/Athlete');
 const { protect } = require('../middleware/auth');
 const NotificationService = require('../services/notificationService');
 const logger = require('../services/logger');
+const config = require('../config/config');
 
 router.use(protect);
 
@@ -73,37 +74,82 @@ router.get('/stats', async (req, res) => {
     const currentMonth = new Date().getMonth() + 1;
 
     const [
-      totalPaid,
-      totalPending,
-      totalOverdue,
-      byType
+      totalPaidStats,
+      totalPendingStats,
+      totalOverdueStats,
+      totalPartialStats,
+      byType,
+      totalRemainingBalance
     ] = await Promise.all([
+      // Tam ödenmiş
       Payment.aggregate([
         { $match: { status: 'Ödendi' } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        { $group: { _id: null, total: { $sum: '$paidAmount' }, count: { $sum: 1 } } }
       ]),
+      // Beklemede (hiç ödeme yapılmamış)
       Payment.aggregate([
         { $match: { status: 'Beklemede' } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ]),
+      // Gecikmiş
       Payment.aggregate([
         { $match: { status: 'Gecikmiş' } },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+        { $group: { 
+          _id: null, 
+          total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } }, 
+          count: { $sum: 1 } 
+        } }
       ]),
+      // Kısmi ödeme yapılmış
+      Payment.aggregate([
+        { $match: { status: 'Kısmi Ödeme' } },
+        { $group: { 
+          _id: null, 
+          totalPaid: { $sum: '$paidAmount' },
+          totalRemaining: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } },
+          count: { $sum: 1 } 
+        } }
+      ]),
+      // Ödeme tipine göre
       Payment.aggregate([
         { $group: { _id: '$paymentType', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      // Toplam kalan borç (tüm ödenmemiş ödemeler)
+      Payment.aggregate([
+        { $match: { status: { $in: ['Beklemede', 'Gecikmiş', 'Kısmi Ödeme'] } } },
+        { $group: { 
+          _id: null, 
+          total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } }
+        } }
       ])
     ]);
 
     res.json({
       success: true,
       stats: {
-        totalPaid: totalPaid[0]?.total || 0,
-        paidCount: totalPaid[0]?.count || 0,
-        totalPending: totalPending[0]?.total || 0,
-        pendingCount: totalPending[0]?.count || 0,
-        totalOverdue: totalOverdue[0]?.total || 0,
-        overdueCount: totalOverdue[0]?.count || 0,
+        // Toplam tahsilat (ödenen para)
+        totalPaid: totalPaidStats[0]?.total || 0,
+        paidCount: totalPaidStats[0]?.count || 0,
+        
+        // Bekleyen (hiç ödeme yapılmamış)
+        totalPending: totalPendingStats[0]?.total || 0,
+        pendingCount: totalPendingStats[0]?.count || 0,
+        
+        // Gecikmiş (kalan borç)
+        totalOverdue: totalOverdueStats[0]?.total || 0,
+        overdueCount: totalOverdueStats[0]?.count || 0,
+        
+        // Kısmi ödeme yapılmış
+        partialPayments: {
+          count: totalPartialStats[0]?.count || 0,
+          totalPaid: totalPartialStats[0]?.totalPaid || 0,
+          totalRemaining: totalPartialStats[0]?.totalRemaining || 0
+        },
+        
+        // Toplam eksik/kalan borç
+        totalRemainingBalance: totalRemainingBalance[0]?.total || 0,
+        
+        // Ödeme tipine göre
         byType: byType.reduce((acc, item) => {
           acc[item._id] = { total: item.total, count: item.count };
           return acc;
@@ -111,6 +157,7 @@ router.get('/stats', async (req, res) => {
       }
     });
   } catch (error) {
+    logger.error('Stats error', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası'
@@ -295,7 +342,8 @@ router.post('/generate-monthly', async (req, res) => {
       await Payment.create({
         athlete: athlete._id,
         paymentType: 'Aylık',
-        amount: athlete.monthlyFee || 1500,
+        amount: athlete.monthlyFee || config.PRICING.DEFAULT_MONTHLY_FEE,
+        paidAmount: 0,
         period: { month: currentMonth, year: currentYear },
         dueDate: dueDate
       });
@@ -318,7 +366,7 @@ router.post('/generate-monthly', async (req, res) => {
 });
 
 // @route   POST /api/payments/:id/pay
-// @desc    Ödeme al
+// @desc    Tam ödeme al (Kalan tüm borcu kapat)
 // @access  Private
 router.post('/:id/pay', async (req, res) => {
   try {
@@ -341,6 +389,23 @@ router.post('/:id/pay', async (req, res) => {
       });
     }
 
+    // Kalan borcu hesapla ve tam öde
+    const remainingAmount = payment.amount - (payment.paidAmount || 0);
+    
+    if (remainingAmount > 0) {
+      // Kısmi ödeme kaydı olarak ekle
+      payment.partialPayments.push({
+        amount: remainingAmount,
+        paymentDate: new Date(),
+        paymentMethod: paymentMethod || 'Nakit',
+        receiptNumber,
+        notes,
+        processedBy: req.admin.id
+      });
+      
+      payment.paidAmount = payment.amount; // Tam ödendi
+    }
+    
     payment.status = 'Ödendi';
     payment.paymentDate = new Date();
     payment.paymentMethod = paymentMethod;
@@ -351,7 +416,7 @@ router.post('/:id/pay', async (req, res) => {
 
     // Sporcu ödeme özetini güncelle
     const athlete = await Athlete.findById(payment.athlete._id);
-    athlete.paymentSummary.totalPaid += payment.amount;
+    athlete.paymentSummary.totalPaid += remainingAmount;
     athlete.paymentSummary.lastPaymentDate = new Date();
     
     // 8 Seanslık paket ödendiyse paketi yenile
@@ -383,6 +448,128 @@ router.post('/:id/pay', async (req, res) => {
     });
   } catch (error) {
     logger.error('Payment process error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+});
+
+// @route   POST /api/payments/:id/partial-pay
+// @desc    Kısmi ödeme al (Belirtilen tutarı al)
+// @access  Private
+router.post('/:id/partial-pay', [
+  body('amount').isNumeric().withMessage('Tutar zorunludur ve sayı olmalıdır'),
+  body('paymentMethod').optional().isIn(['Nakit', 'Kredi Kartı', 'Havale/EFT', 'Diğer'])
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { amount, paymentMethod, receiptNumber, notes } = req.body;
+    
+    const payment = await Payment.findById(req.params.id)
+      .populate('athlete');
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ödeme bulunamadı'
+      });
+    }
+
+    if (payment.status === 'Ödendi') {
+      return res.status(400).json({
+        success: false,
+        message: 'Bu ödeme zaten tamamen alınmış'
+      });
+    }
+
+    // Kalan borcu kontrol et
+    const remainingBalance = payment.amount - (payment.paidAmount || 0);
+    
+    if (amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ödeme tutarı 0\'dan büyük olmalıdır'
+      });
+    }
+    
+    if (amount > remainingBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Kalan borç ${remainingBalance}₺, bu tutardan fazla ödeme yapılamaz`
+      });
+    }
+
+    // Kısmi ödeme kaydı ekle
+    payment.partialPayments.push({
+      amount: parseFloat(amount),
+      paymentDate: new Date(),
+      paymentMethod: paymentMethod || 'Nakit',
+      receiptNumber,
+      notes,
+      processedBy: req.admin.id
+    });
+    
+    // Toplam ödenen tutarı güncelle
+    payment.paidAmount = (payment.paidAmount || 0) + parseFloat(amount);
+    payment.paymentMethod = paymentMethod;
+    payment.processedBy = req.admin.id;
+    
+    // Durum otomatik güncellenecek (pre-save hook)
+    await payment.save();
+
+    // Sporcu ödeme özetini güncelle
+    const athlete = await Athlete.findById(payment.athlete._id);
+    athlete.paymentSummary.totalPaid += parseFloat(amount);
+    athlete.paymentSummary.lastPaymentDate = new Date();
+    
+    // Tam ödendiyse ve 8 Seanslık paketse
+    if (payment.status === 'Ödendi' && payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
+      athlete.remainingSessions = 8;
+      athlete.packageRenewCount += 1;
+    }
+    
+    // Tam ödendiyse ve aylık üyelikse
+    if (payment.status === 'Ödendi' && payment.paymentType === 'Aylık') {
+      const nextMonth = new Date(payment.dueDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      athlete.nextPaymentDate = nextMonth;
+    }
+    
+    await athlete.save();
+
+    // Tam ödendiyse bildirim gönder
+    if (payment.status === 'Ödendi') {
+      try {
+        await NotificationService.createPaymentReceivedNotification(payment, athlete);
+      } catch (notifError) {
+        logger.warn('Payment notification failed', { error: notifError.message });
+      }
+    }
+
+    const newRemainingBalance = payment.amount - payment.paidAmount;
+
+    res.json({
+      success: true,
+      message: newRemainingBalance > 0 
+        ? `${amount}₺ ödeme alındı. Kalan borç: ${newRemainingBalance}₺`
+        : 'Ödeme tamamen tamamlandı!',
+      data: {
+        payment,
+        remainingBalance: newRemainingBalance,
+        paidAmount: payment.paidAmount,
+        isFullyPaid: payment.status === 'Ödendi'
+      }
+    });
+  } catch (error) {
+    logger.error('Partial payment error', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası'

@@ -43,6 +43,7 @@ const paymentRoutes = require('./routes/payments');
 const notificationRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
 const registrationRoutes = require('./routes/registration');
+const smsRoutes = require('./routes/sms');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Server State Management (Enterprise)
@@ -180,7 +181,7 @@ app.get('/api/health', async (req, res) => {
     serverReady: serverState.isReady,
     services: {
       database: 'checking...',
-      sms: config.NETGSM.enabled ? 'enabled' : 'disabled'
+      sms: config.SMS.enabled ? 'enabled (BozkurtSMS)' : 'disabled'
     },
     metrics: {
       requestCount: serverState.requestCount,
@@ -291,6 +292,7 @@ app.use('/api/sessions', generalRateLimiter);
 app.use('/api/payments', generalRateLimiter);
 app.use('/api/notifications', generalRateLimiter);
 app.use('/api/dashboard', generalRateLimiter);
+app.use('/api/sms', generalRateLimiter);
 
 // Public endpoints için daha gevşek rate limit
 app.use('/api/registration', publicRateLimiter);
@@ -322,6 +324,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/registration', registrationRoutes);
+app.use('/api/sms', smsRoutes);
 
 // API info
 app.get('/api', (req, res) => {
@@ -341,7 +344,8 @@ app.get('/api', (req, res) => {
       payments: '/api/payments',
       notifications: '/api/notifications',
       dashboard: '/api/dashboard',
-      registration: '/api/registration'
+      registration: '/api/registration',
+      sms: '/api/sms'
     }
   });
 });
@@ -480,7 +484,7 @@ cron.schedule('0 0 1 * *', async () => {
         await Payment.create({
           athlete: athlete._id,
           paymentType: 'Aylık',
-          amount: athlete.monthlyFee || 1500,
+          amount: athlete.monthlyFee || config.PRICING.DEFAULT_MONTHLY_FEE,
           period: { month: currentMonth, year: currentYear },
           dueDate: dueDate
         });
@@ -571,12 +575,12 @@ const startServer = async () => {
   ╔══════════════════════════════════════════════════════════════╗
   ║                                                              ║
   ║     🏊 KIRIKKALE OLİMPİYAT SPOR KULÜBÜ                      ║
-  ║        Yüzme Branşı Yönetim Sistemi v3.1                    ║
+  ║        Yüzme Branşı Yönetim Sistemi v3.2                    ║
   ║                                                              ║
   ║     🚀 Server Port: ${PORT}                                    ║
   ║     📡 API: http://localhost:${PORT}/api                       ║
   ║     🔒 Environment: ${config.NODE_ENV.padEnd(23)}           ║
-  ║     📱 SMS: ${(config.NETGSM.enabled ? 'Enabled' : 'Disabled').padEnd(30)}║
+  ║     📱 SMS: ${(config.SMS.enabled ? 'BozkurtSMS Aktif' : 'Devre Dışı').padEnd(26)}║
   ║     🌐 CORS: Enabled                                         ║
   ║                                                              ║
   ║     ⚡ Server started - connecting to database...            ║

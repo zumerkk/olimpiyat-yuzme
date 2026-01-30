@@ -1,11 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Bildirim Servisi v2.0
+//                         Bildirim Servisi v3.0
+//                    BozkurtSMS Entegrasyonu ile Güncellenmiş
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const Notification = require('../models/Notification');
 const Payment = require('../models/Payment');
 const Athlete = require('../models/Athlete');
+const SMSLog = require('../models/SMSLog');
 const config = require('../config/config');
 const logger = require('./logger');
 const smsService = require('./smsService');
@@ -35,39 +37,53 @@ class NotificationService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Ödeme hatırlatması kontrolü
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // AYLIK ÖDEME HATIRLATALARI
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Aylık ödeme hatırlatması kontrolü
+   * - Vade tarihine 1 gün kala SMS gönderir
+   * - Vadesi geçmiş ödemelere süre doldu SMS'i gönderir
+   */
   static async checkPaymentReminders() {
     try {
-      const reminderDays = config.NOTIFICATIONS.PAYMENT_REMINDER_DAYS;
-      const targetDate = new Date();
+      const reminderDays = config.NOTIFICATIONS.PAYMENT_REMINDER_DAYS; // 1 gün
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Yarınki tarih (1 gün sonra)
+      const targetDate = new Date(today);
       targetDate.setDate(targetDate.getDate() + reminderDays);
-
-      // Yaklaşan vadeli ödemeler
-      const upcomingPayments = await Payment.find({
-        status: { $in: ['Beklemede', 'Gecikmiş'] },
-        reminderSent: false,
-        dueDate: { $lte: targetDate }
-      }).populate('athlete', 'firstName lastName phone guardian');
+      targetDate.setHours(23, 59, 59, 999);
 
       let notificationsCreated = 0;
       let smsSent = 0;
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // 1. YAKLAŞAN ÖDEMELER (1 gün kala)
+      // ═══════════════════════════════════════════════════════════════════════
+      const upcomingPayments = await Payment.find({
+        status: { $in: ['Beklemede', 'Kısmi Ödeme'] },
+        paymentType: 'Aylık',
+        reminderSent: false,
+        dueDate: {
+          $gte: today,
+          $lte: targetDate
+        }
+      }).populate('athlete', 'firstName lastName phone guardian tcNo');
+
       for (const payment of upcomingPayments) {
         if (!payment.athlete) continue;
         
-        const isOverdue = new Date() > new Date(payment.dueDate);
-        const periodName = payment.paymentType === 'Aylık' 
-          ? payment.periodName 
-          : `${payment.packageNumber}. Paket`;
+        const periodName = payment.periodName;
         
         // Panel bildirimi oluştur
         await this.create({
           type: 'payment_reminder',
-          title: isOverdue ? '⚠️ Gecikmiş Ödeme!' : '💳 Yaklaşan Ödeme Hatırlatması',
-          message: `${payment.athlete.firstName} ${payment.athlete.lastName} - ${periodName} için ${payment.amount}₺ ${isOverdue ? 'ödeme gecikmiş' : 'ödeme vadesi yaklaşıyor'}.`,
-          priority: isOverdue ? 'urgent' : 'high',
+          title: '💳 Yaklaşan Ödeme Hatırlatması',
+          message: `${payment.athlete.firstName} ${payment.athlete.lastName} - ${periodName} için ${payment.amount}₺ ödeme vadesi yaklaşıyor (1 gün kaldı).`,
+          priority: 'high',
           relatedData: {
             athleteId: payment.athlete._id,
             paymentId: payment._id
@@ -79,20 +95,97 @@ class NotificationService {
 
         // SMS gönder
         const phone = payment.athlete.phone || payment.athlete.guardian?.phone;
-        if (phone && config.NETGSM.enabled) {
+        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
           const dueDate = new Date(payment.dueDate).toLocaleDateString('tr-TR');
-          await smsService.sendPaymentReminder(
+          const result = await smsService.sendMonthlyPaymentReminder(
             phone,
             `${payment.athlete.firstName} ${payment.athlete.lastName}`,
             payment.amount,
             dueDate
           );
-          smsSent++;
+          
+          if (result.success) smsSent++;
+          
+          // SMS log güncelle
+          await SMSLog.findOneAndUpdate(
+            { phone: smsService.formatPhone(phone), createdAt: { $gte: new Date(Date.now() - 5000) } },
+            { athlete: payment.athlete._id, isAutomatic: true },
+            { sort: { createdAt: -1 } }
+          );
         }
 
         // Hatırlatma gönderildi olarak işaretle
         payment.reminderSent = true;
         await payment.save();
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // 2. VADESİ GEÇMİŞ ÖDEMELER (süre doldu mesajı)
+      // ═══════════════════════════════════════════════════════════════════════
+      const overduePayments = await Payment.find({
+        status: { $in: ['Beklemede', 'Gecikmiş', 'Kısmi Ödeme'] },
+        paymentType: 'Aylık',
+        dueDate: { $lt: today }
+      }).populate('athlete', 'firstName lastName phone guardian tcNo');
+
+      for (const payment of overduePayments) {
+        if (!payment.athlete) continue;
+        
+        // Günlük kontrol - aynı gün içinde tekrar SMS atma
+        const todaySMSExists = await SMSLog.findOne({
+          athlete: payment.athlete._id,
+          type: 'monthly_expired',
+          createdAt: { $gte: today }
+        });
+
+        if (todaySMSExists) continue;
+
+        // Gecikme durumunu güncelle
+        if (payment.status !== 'Gecikmiş') {
+          payment.status = 'Gecikmiş';
+          await payment.save();
+        }
+
+        // Panel bildirimi (günde 1 kez)
+        const existingNotification = await Notification.findOne({
+          type: 'payment_reminder',
+          'relatedData.paymentId': payment._id,
+          createdAt: { $gte: today }
+        });
+
+        if (!existingNotification) {
+          await this.create({
+            type: 'payment_reminder',
+            title: '⚠️ Gecikmiş Ödeme!',
+            message: `${payment.athlete.firstName} ${payment.athlete.lastName} - ${payment.periodName} için ${payment.amount}₺ ödeme gecikmiş!`,
+            priority: 'urgent',
+            relatedData: {
+              athleteId: payment.athlete._id,
+              paymentId: payment._id
+            },
+            isAutoGenerated: true,
+            actionUrl: `/odemeler`
+          });
+          notificationsCreated++;
+        }
+
+        // SMS gönder (vadesi geçtikten sonra 1 kez)
+        const phone = payment.athlete.phone || payment.athlete.guardian?.phone;
+        const expiredSMSSent = await SMSLog.findOne({
+          athlete: payment.athlete._id,
+          type: 'monthly_expired',
+          'relatedData.paymentId': payment._id
+        });
+
+        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED && !expiredSMSSent) {
+          const result = await smsService.sendMonthlyPaymentExpired(
+            phone,
+            `${payment.athlete.firstName} ${payment.athlete.lastName}`,
+            payment.amount
+          );
+          
+          if (result.success) smsSent++;
+        }
       }
 
       logger.info('Payment reminders processed', { 
@@ -107,23 +200,35 @@ class NotificationService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Düşük seans hakkı hatırlatması kontrolü
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SEANS HAKKI HATIRLATALARI
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Düşük seans hakkı hatırlatması kontrolü
+   * - 1 seans kala uyarı SMS'i gönderir
+   * - 0 seans kaldığında doldu SMS'i gönderir
+   */
   static async checkSessionReminders() {
     try {
-      // 2 veya daha az seans hakkı kalan sporcular
-      const lowSessionAthletes = await Athlete.find({
-        status: 'Aktif',
-        membershipType: '8 Seanslık',
-        remainingSessions: { $lte: 2, $gt: 0 }
-      });
+      const warningThreshold = config.NOTIFICATIONS.SESSION_WARNING_THRESHOLD; // 1 seans
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
       let notificationsCreated = 0;
       let smsSent = 0;
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // 1. SEANS HAKKI AZALIYOR (1 seans kala)
+      // ═══════════════════════════════════════════════════════════════════════
+      const lowSessionAthletes = await Athlete.find({
+        status: 'Aktif',
+        membershipType: '8 Seanslık',
+        remainingSessions: warningThreshold
+      });
+
       for (const athlete of lowSessionAthletes) {
-        // Aynı sporcu için son 24 saatte bildirim var mı kontrol et
+        // Son 24 saatte bildirim var mı kontrol et
         const existingNotification = await Notification.findOne({
           type: 'session_ending',
           'relatedData.athleteId': athlete._id,
@@ -136,7 +241,7 @@ class NotificationService {
             type: 'session_ending',
             title: '⚠️ Seans Hakkı Azalıyor',
             message: `${athlete.firstName} ${athlete.lastName} - Sadece ${athlete.remainingSessions} seans hakkı kaldı. Paket yenileme gerekebilir.`,
-            priority: athlete.remainingSessions <= 1 ? 'high' : 'medium',
+            priority: 'high',
             relatedData: {
               athleteId: athlete._id
             },
@@ -147,14 +252,77 @@ class NotificationService {
 
           // SMS gönder
           const phone = athlete.phone || athlete.guardian?.phone;
-          if (phone && config.NETGSM.enabled) {
-            await smsService.sendSessionWarning(
+          if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
+            const result = await smsService.sendSessionWarning(
               phone,
               `${athlete.firstName} ${athlete.lastName}`,
               athlete.remainingSessions
             );
-            smsSent++;
+            
+            if (result.success) smsSent++;
+            
+            // SMS log güncelle
+            await SMSLog.findOneAndUpdate(
+              { phone: smsService.formatPhone(phone), createdAt: { $gte: new Date(Date.now() - 5000) } },
+              { athlete: athlete._id, isAutomatic: true },
+              { sort: { createdAt: -1 } }
+            );
           }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // 2. SEANS HAKKI DOLDU (0 seans)
+      // ═══════════════════════════════════════════════════════════════════════
+      const expiredSessionAthletes = await Athlete.find({
+        status: 'Aktif',
+        membershipType: '8 Seanslık',
+        remainingSessions: 0
+      });
+
+      for (const athlete of expiredSessionAthletes) {
+        // Bugün zaten SMS gönderilmiş mi?
+        const todaySMSExists = await SMSLog.findOne({
+          athlete: athlete._id,
+          type: 'session_expired',
+          createdAt: { $gte: today }
+        });
+
+        if (todaySMSExists) continue;
+
+        // Panel bildirimi
+        const existingNotification = await Notification.findOne({
+          type: 'session_ending',
+          'relatedData.athleteId': athlete._id,
+          message: { $regex: /doldu/i },
+          createdAt: { $gte: today }
+        });
+
+        if (!existingNotification) {
+          await this.create({
+            type: 'session_ending',
+            title: '🚨 Seans Hakkı Doldu!',
+            message: `${athlete.firstName} ${athlete.lastName} (TC: ${athlete.tcNo}) - Seans hakkı dolmuştur. Yeni paket gerekli.`,
+            priority: 'urgent',
+            relatedData: {
+              athleteId: athlete._id
+            },
+            isAutoGenerated: true,
+            actionUrl: `/sporcular/${athlete._id}`
+          });
+          notificationsCreated++;
+        }
+
+        // SMS gönder
+        const phone = athlete.phone || athlete.guardian?.phone;
+        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
+          const result = await smsService.sendSessionExpired(
+            phone,
+            `${athlete.firstName} ${athlete.lastName}`,
+            athlete.tcNo
+          );
+          
+          if (result.success) smsSent++;
         }
       }
 
@@ -170,9 +338,13 @@ class NotificationService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Yeni kayıt bildirimi
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DİĞER BİLDİRİMLER
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Yeni kayıt bildirimi
+   */
   static async createNewRegistrationNotification(registration) {
     // Panel bildirimi
     const notification = await this.create({
@@ -187,7 +359,7 @@ class NotificationService {
 
     // SMS ile veli'ye onay gönder
     const phone = registration.phone || registration.guardian?.phone;
-    if (phone && config.NETGSM.enabled) {
+    if (phone && config.SMS.enabled) {
       await smsService.sendRegistrationConfirmation(
         phone,
         `${registration.firstName} ${registration.lastName}`
@@ -197,9 +369,9 @@ class NotificationService {
     return notification;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Ödeme alındı bildirimi
-  // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * Ödeme alındı bildirimi
+   */
   static async createPaymentReceivedNotification(payment, athlete) {
     // Panel bildirimi
     const notification = await this.create({
@@ -217,7 +389,7 @@ class NotificationService {
 
     // SMS ile veli'ye onay gönder
     const phone = athlete.phone || athlete.guardian?.phone;
-    if (phone && config.NETGSM.enabled) {
+    if (phone && config.SMS.enabled) {
       await smsService.sendPaymentConfirmation(
         phone,
         `${athlete.firstName} ${athlete.lastName}`,
@@ -228,9 +400,9 @@ class NotificationService {
     return notification;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Manuel bildirim gönder
-  // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * Manuel bildirim gönder
+   */
   static async sendCustomNotification(data) {
     const notification = await this.create({
       type: 'custom',
@@ -244,25 +416,46 @@ class NotificationService {
     });
 
     // SMS gönder (eğer telefon ve mesaj varsa)
-    if (data.phone && data.sendSms && config.NETGSM.enabled) {
+    if (data.phone && data.sendSms && config.SMS.enabled) {
       await smsService.sendCustomMessage(data.phone, data.message);
     }
 
     return notification;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Toplu SMS gönder
-  // ─────────────────────────────────────────────────────────────────────────────
-  static async sendBulkSMS(phones, message) {
-    if (!config.NETGSM.enabled) {
+  /**
+   * Toplu SMS gönder
+   */
+  static async sendBulkSMS(recipients, message, useTemplate = false) {
+    if (!config.SMS.enabled) {
       return {
         success: false,
         message: 'SMS servisi devre dışı'
       };
     }
 
-    return await smsService.sendBulk(phones, message);
+    return await smsService.sendBulk(recipients, message, useTemplate);
+  }
+
+  /**
+   * Gruba SMS gönder
+   */
+  static async sendGroupSMS(groupType, message, useTemplate = false) {
+    if (!config.SMS.enabled) {
+      return {
+        success: false,
+        message: 'SMS servisi devre dışı'
+      };
+    }
+
+    return await smsService.sendToGroup(groupType, message, useTemplate);
+  }
+
+  /**
+   * SMS istatistiklerini al
+   */
+  static async getSMSStats(startDate, endDate) {
+    return await smsService.getStats(startDate, endDate);
   }
 }
 

@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, User, Phone, Mail, MapPin, Calendar, CreditCard,
   Heart, Users, CheckCircle, Clock, AlertTriangle, Edit2,
-  Package, RefreshCw
+  Package, RefreshCw, TrendingDown, PieChart, DollarSign
 } from 'lucide-react'
 
 export default function AthleteDetail() {
@@ -312,6 +312,73 @@ export default function AthleteDetail() {
         )}
       </motion.div>
 
+      {/* Payment Summary Card - Borç/Ödeme Özeti */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.35 }}
+        className="card p-6"
+      >
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-primary-600" />
+          Ödeme Özeti
+        </h3>
+        
+        <div className="grid sm:grid-cols-4 gap-4">
+          {/* Aylık/Paket Ücreti */}
+          <div className="p-4 bg-gray-50 rounded-xl text-center">
+            <DollarSign className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 mb-1">
+              {athlete.membershipType === 'Aylık' ? 'Aylık Ücret' : 'Paket Ücreti'}
+            </p>
+            <p className="text-xl font-bold text-gray-900">
+              {formatCurrency(athlete.membershipType === 'Aylık' ? athlete.monthlyFee : athlete.packageFee)}
+            </p>
+          </div>
+          
+          {/* Toplam Ödenen */}
+          <div className="p-4 bg-green-50 rounded-xl text-center">
+            <CheckCircle className="w-6 h-6 text-green-500 mx-auto mb-2" />
+            <p className="text-sm text-green-600 mb-1">Toplam Ödenen</p>
+            <p className="text-xl font-bold text-green-700">
+              {formatCurrency(athlete.paymentSummary?.totalPaid || 0)}
+            </p>
+          </div>
+          
+          {/* Toplam Borç - Hesaplanacak */}
+          <div className="p-4 bg-red-50 rounded-xl text-center">
+            <TrendingDown className="w-6 h-6 text-red-500 mx-auto mb-2" />
+            <p className="text-sm text-red-600 mb-1">Toplam Borç</p>
+            <p className="text-xl font-bold text-red-700">
+              {formatCurrency(
+                athlete.payments?.reduce((total, p) => {
+                  if (p.status !== 'Ödendi' && p.status !== 'İptal') {
+                    return total + (p.amount - (p.paidAmount || 0))
+                  }
+                  return total
+                }, 0) || 0
+              )}
+            </p>
+          </div>
+          
+          {/* Kısmi Ödemeler */}
+          <div className="p-4 bg-blue-50 rounded-xl text-center">
+            <PieChart className="w-6 h-6 text-blue-500 mx-auto mb-2" />
+            <p className="text-sm text-blue-600 mb-1">Kısmi Ödeme</p>
+            <p className="text-xl font-bold text-blue-700">
+              {athlete.payments?.filter(p => p.status === 'Kısmi Ödeme').length || 0} adet
+            </p>
+          </div>
+        </div>
+        
+        {/* Son Ödeme Tarihi */}
+        {athlete.paymentSummary?.lastPaymentDate && (
+          <p className="text-sm text-gray-500 mt-4 text-center">
+            Son ödeme: {formatDate(athlete.paymentSummary.lastPaymentDate)}
+          </p>
+        )}
+      </motion.div>
+
       {/* Payment History */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -323,7 +390,7 @@ export default function AthleteDetail() {
           <h3 className="font-semibold text-gray-900">Ödeme Geçmişi</h3>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-500">
-              Toplam: <span className="font-semibold text-gray-900">{formatCurrency(athlete.paymentSummary?.totalPaid || 0)}</span>
+              Toplam Tahsilat: <span className="font-semibold text-green-600">{formatCurrency(athlete.paymentSummary?.totalPaid || 0)}</span>
             </span>
           </div>
         </div>
@@ -335,41 +402,68 @@ export default function AthleteDetail() {
                 <tr>
                   <th>Dönem/Paket</th>
                   <th>Tip</th>
-                  <th>Tutar</th>
-                  <th>Vade</th>
+                  <th>Beklenen</th>
+                  <th>Ödenen</th>
+                  <th>Kalan Borç</th>
                   <th>Durum</th>
                 </tr>
               </thead>
               <tbody>
-                {athlete.payments.map((payment) => (
-                  <tr key={payment._id}>
-                    <td className="font-medium">
-                      {payment.paymentType === 'Aylık' 
-                        ? `${getMonthName(payment.period?.month)} ${payment.period?.year}`
-                        : `${payment.packageNumber}. Paket`
-                      }
-                    </td>
-                    <td>
-                      <span className={`badge ${payment.paymentType === 'Aylık' ? 'badge-info' : 'badge-primary'}`}>
-                        {payment.paymentType}
-                      </span>
-                    </td>
-                    <td className="font-semibold">{formatCurrency(payment.amount)}</td>
-                    <td className="text-sm text-gray-500">{formatDate(payment.dueDate)}</td>
-                    <td>
-                      <span className={`badge ${
-                        payment.status === 'Ödendi' ? 'badge-success' :
-                        payment.status === 'Gecikmiş' ? 'badge-danger' :
-                        payment.status === 'Beklemede' ? 'badge-warning' : 'badge-info'
-                      }`}>
-                        {payment.status === 'Ödendi' && <CheckCircle className="w-3 h-3 mr-1" />}
-                        {payment.status === 'Beklemede' && <Clock className="w-3 h-3 mr-1" />}
-                        {payment.status === 'Gecikmiş' && <AlertTriangle className="w-3 h-3 mr-1" />}
-                        {payment.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {athlete.payments.map((payment) => {
+                  const remaining = payment.amount - (payment.paidAmount || 0)
+                  const paidPercent = payment.amount > 0 ? Math.round(((payment.paidAmount || 0) / payment.amount) * 100) : 100
+                  
+                  return (
+                    <tr key={payment._id}>
+                      <td className="font-medium">
+                        {payment.paymentType === 'Aylık' 
+                          ? `${getMonthName(payment.period?.month)} ${payment.period?.year}`
+                          : `${payment.packageNumber}. Paket`
+                        }
+                      </td>
+                      <td>
+                        <span className={`badge ${payment.paymentType === 'Aylık' ? 'badge-info' : 'badge-primary'}`}>
+                          {payment.paymentType}
+                        </span>
+                      </td>
+                      <td className="font-semibold text-gray-700">{formatCurrency(payment.amount)}</td>
+                      <td>
+                        <span className={`font-semibold ${(payment.paidAmount || 0) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {formatCurrency(payment.paidAmount || 0)}
+                        </span>
+                        {payment.paidAmount > 0 && payment.paidAmount < payment.amount && (
+                          <div className="w-16 h-1.5 bg-gray-200 rounded-full mt-1">
+                            <div 
+                              className="h-full bg-green-500 rounded-full"
+                              style={{ width: `${paidPercent}%` }}
+                            />
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {remaining > 0 ? (
+                          <span className="font-bold text-red-600">{formatCurrency(remaining)}</span>
+                        ) : (
+                          <span className="text-green-600 font-medium">Tamam ✓</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge flex items-center gap-1 w-fit ${
+                          payment.status === 'Ödendi' ? 'badge-success' :
+                          payment.status === 'Gecikmiş' ? 'badge-danger' :
+                          payment.status === 'Kısmi Ödeme' ? 'badge-info' :
+                          payment.status === 'Beklemede' ? 'badge-warning' : 'badge-info'
+                        }`}>
+                          {payment.status === 'Ödendi' && <CheckCircle className="w-3 h-3" />}
+                          {payment.status === 'Beklemede' && <Clock className="w-3 h-3" />}
+                          {payment.status === 'Gecikmiş' && <AlertTriangle className="w-3 h-3" />}
+                          {payment.status === 'Kısmi Ödeme' && <PieChart className="w-3 h-3" />}
+                          {payment.status}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

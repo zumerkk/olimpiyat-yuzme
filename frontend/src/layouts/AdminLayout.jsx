@@ -22,18 +22,20 @@ import {
   Menu,
   X,
   ChevronDown,
-  QrCode
+  QrCode,
+  MessageSquare
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Sporcular', href: '/sporcular', icon: Users },
-  { name: 'Seanslar', href: '/seanslar', icon: Calendar },
-  { name: 'Ödemeler', href: '/odemeler', icon: CreditCard },
-  { name: 'Aylık Takip', href: '/aylik-odemeler', icon: CalendarClock },
-  { name: 'Online Kayıtlar', href: '/kayitlar', icon: UserPlus },
-  { name: 'Bildirimler', href: '/bildirimler', icon: Bell },
-  { name: 'Ayarlar', href: '/ayarlar', icon: Settings },
+  { name: 'Dashboard', href: '/panel', icon: LayoutDashboard },
+  { name: 'Sporcular', href: '/panel/sporcular', icon: Users },
+  { name: 'Seanslar', href: '/panel/seanslar', icon: Calendar },
+  { name: 'Ödemeler', href: '/panel/odemeler', icon: CreditCard },
+  { name: 'Aylık Takip', href: '/panel/aylik-odemeler', icon: CalendarClock },
+  { name: 'Online Kayıtlar', href: '/panel/kayitlar', icon: UserPlus },
+  { name: 'SMS Yönetimi', href: '/panel/sms', icon: MessageSquare },
+  { name: 'Bildirimler', href: '/panel/bildirimler', icon: Bell },
+  { name: 'Ayarlar', href: '/panel/ayarlar', icon: Settings },
 ]
 
 export default function AdminLayout() {
@@ -154,7 +156,7 @@ export default function AdminLayout() {
                     <button
                       onClick={() => {
                         setProfileOpen(false)
-                        navigate('/ayarlar')
+                        navigate('/panel/ayarlar')
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
                     >
@@ -203,7 +205,7 @@ export default function AdminLayout() {
 
               {/* QR Code Button */}
               <button
-                onClick={() => navigate('/kayitlar')}
+                onClick={() => navigate('/panel/kayitlar')}
                 className="p-2 hover:bg-primary-50 rounded-lg text-primary-600 transition-colors"
                 title="Online Kayıt QR Kodu"
               >
@@ -212,7 +214,7 @@ export default function AdminLayout() {
 
               {/* Notifications */}
               <button
-                onClick={() => navigate('/bildirimler')}
+                onClick={() => navigate('/panel/bildirimler')}
                 className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <Bell className="w-5 h-5 text-gray-600" />
