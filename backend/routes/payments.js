@@ -577,6 +577,75 @@ router.post('/:id/partial-pay', [
   }
 });
 
+// @route   PATCH /api/payments/:id/revert
+// @desc    Yanlışlıkla işaretlenen ödemeyi geri al (Ödendi -> Beklemede)
+// @access  Private
+router.patch('/:id/revert', async (req, res) => {
+  try {
+    const payment = await Payment.findById(req.params.id)
+      .populate('athlete');
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ödeme bulunamadı'
+      });
+    }
+
+    if (payment.status !== 'Ödendi') {
+      return res.status(400).json({
+        success: false,
+        message: 'Sadece ödenmiş kayıtlar geri alınabilir'
+      });
+    }
+
+    const paidAmount = payment.paidAmount || payment.amount;
+
+    // Ödeme kaydını sıfırla
+    payment.paidAmount = 0;
+    payment.partialPayments = [];
+    payment.status = new Date(payment.dueDate) < new Date() ? 'Gecikmiş' : 'Beklemede';
+    payment.paymentDate = null;
+    payment.paymentMethod = null;
+    payment.receiptNumber = null;
+    payment.processedBy = null;
+    payment.notes = payment.notes ? `${payment.notes} [Ödeme geri alındı: ${new Date().toLocaleString('tr-TR')}]` : `[Ödeme geri alındı: ${new Date().toLocaleString('tr-TR')}]`;
+    await payment.save();
+
+    // Sporcu özetini güncelle
+    const athlete = await Athlete.findById(payment.athlete._id);
+    if (athlete) {
+      if (!athlete.paymentSummary) athlete.paymentSummary = { totalPaid: 0, totalDue: 0, lastPaymentDate: null };
+      athlete.paymentSummary.totalPaid = Math.max(0, (athlete.paymentSummary.totalPaid || 0) - paidAmount);
+    }
+
+    // 8 Seanslık paket ödemesi geri alındıysa
+    if (payment.paymentType === '8 Seanslık' && athlete?.membershipType === '8 Seanslık') {
+      athlete.packageRenewCount = Math.max(0, (athlete.packageRenewCount || 1) - 1);
+      athlete.remainingSessions = Math.max(0, (athlete.remainingSessions || 8) - 8);
+    }
+
+    // Aylık ödeme geri alındıysa - sonraki ödeme tarihini vade tarihine çek
+    if (payment.paymentType === 'Aylık' && athlete) {
+      athlete.nextPaymentDate = payment.dueDate;
+    }
+
+    if (athlete) await athlete.save();
+
+    res.json({
+      success: true,
+      message: 'Ödeme geri alındı. Kayıt tekrar bekleyen durumuna geçti.',
+      data: payment
+    });
+  } catch (error) {
+    logger.error('Payment revert error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+});
+
 // @route   PUT /api/payments/:id
 // @desc    Ödeme güncelle
 // @access  Private

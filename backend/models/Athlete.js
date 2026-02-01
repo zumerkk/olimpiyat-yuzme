@@ -117,7 +117,7 @@ const athleteSchema = new mongoose.Schema({
   packageFee: {
     type: Number,
     default: function() {
-      return config.PRICING?.DEFAULT_PACKAGE_FEE || 4000;
+      return config.PRICING?.DEFAULT_PACKAGE_FEE || 5000;
     }
   },
   

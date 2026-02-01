@@ -9,7 +9,7 @@ import api, { formatDate } from '../utils/api'
 import toast from 'react-hot-toast'
 import {
   Plus, Calendar, Clock, Users, X, Trash2, Eye, Check, UserPlus,
-  Package, AlertCircle, ChevronLeft, ChevronRight
+  Package, AlertCircle, ChevronLeft, ChevronRight, UserMinus, Pencil
 } from 'lucide-react'
 
 export default function Sessions() {
@@ -27,6 +27,8 @@ export default function Sessions() {
     notes: ''
   })
   const [searchAthlete, setSearchAthlete] = useState('')
+  const [showAddAttendeeModal, setShowAddAttendeeModal] = useState(false)
+  const [addAttendeeSearch, setAddAttendeeSearch] = useState('')
 
   useEffect(() => {
     fetchSessions()
@@ -103,8 +105,39 @@ export default function Sessions() {
       const response = await api.get(`/sessions/${session._id}`)
       setSelectedSession(response.data.data)
       setShowDetailModal(true)
+      setShowAddAttendeeModal(false)
+      setAddAttendeeSearch('')
     } catch (error) {
       toast.error('Yoklama detayları yüklenemedi')
+    }
+  }
+
+  // Geçmiş seansa sporcu ekle (unutulan isim)
+  const handleAddAttendee = async (athleteId) => {
+    if (!selectedSession) return
+    try {
+      const response = await api.post(`/sessions/${selectedSession._id}/add-attendee`, { athleteId })
+      setSelectedSession(response.data.data)
+      setShowAddAttendeeModal(false)
+      setAddAttendeeSearch('')
+      fetchAthletes()
+      toast.success('Sporcu seansa eklendi ve seans hakkı düşürüldü')
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Ekleme işlemi başarısız')
+    }
+  }
+
+  // Geçmiş seansdan sporcu kaldır (yanlışlıkla eklenen)
+  const handleRemoveAttendee = async (athleteId) => {
+    if (!selectedSession) return
+    if (!confirm('Bu sporcuyu yoklamadan çıkaracaksınız. Seans hakkı iade edilecek. Devam?')) return
+    try {
+      const response = await api.delete(`/sessions/${selectedSession._id}/remove-attendee/${athleteId}`)
+      setSelectedSession(response.data.data)
+      fetchAthletes()
+      toast.success('Sporcu yoklamadan çıkarıldı, seans hakkı iade edildi')
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Kaldırma işlemi başarısız')
     }
   }
 
@@ -126,6 +159,16 @@ export default function Sessions() {
   const filteredAthletes = athletes.filter(a => 
     `${a.firstName} ${a.lastName}`.toLowerCase().includes(searchAthlete.toLowerCase()) ||
     a.tcNo.includes(searchAthlete)
+  )
+
+  // Sporcu ekleme için - zaten yoklamada olanları hariç tut
+  const currentAttendeeIds = selectedSession?.attendees?.map(a => 
+    typeof a.athlete === 'object' ? a.athlete?._id : a.athlete
+  ) || []
+  const athletesToAdd = athletes.filter(a => 
+    !currentAttendeeIds.includes(a._id) &&
+    (`${a.firstName} ${a.lastName}`.toLowerCase().includes(addAttendeeSearch.toLowerCase()) ||
+    (a.tcNo || '').includes(addAttendeeSearch))
   )
 
   const openAddModal = () => {
@@ -225,7 +268,7 @@ export default function Sessions() {
                         <button
                           onClick={() => openDetailModal(session)}
                           className="p-2 hover:bg-gray-100 rounded-lg text-gray-500"
-                          title="Detay"
+                          title="Detay / Düzenle"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -466,8 +509,12 @@ export default function Sessions() {
             >
               <div className="p-5 border-b border-gray-100 flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                     Yoklama Detayı
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-50 text-primary-700 text-xs font-medium rounded-lg">
+                      <Pencil className="w-3.5 h-3.5" />
+                      Düzenlenebilir
+                    </span>
                   </h3>
                   <p className="text-sm text-gray-500 mt-1">
                     {formatDate(selectedSession.date)} - {selectedSession.time}
@@ -479,15 +526,55 @@ export default function Sessions() {
               </div>
 
               <div className="p-5">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary-500" />
-                  Katılan Sporcular ({selectedSession.attendees?.length || 0})
-                </h4>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary-500" />
+                    Katılan Sporcular ({selectedSession.attendees?.length || 0})
+                  </h4>
+                  <button
+                    onClick={() => setShowAddAttendeeModal(!showAddAttendeeModal)}
+                    className="btn-secondary btn-sm flex items-center gap-1.5"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Sporcu Ekle
+                  </button>
+                </div>
+
+                {/* Sporcu Ekleme Alanı */}
+                {showAddAttendeeModal && (
+                  <div className="mb-4 p-4 bg-primary-50 border border-primary-100 rounded-xl">
+                    <p className="text-sm text-primary-800 font-medium mb-3">Unutulan sporcuyu ekle</p>
+                    <input
+                      type="text"
+                      placeholder="Sporcu ara (isim veya TC No)..."
+                      value={addAttendeeSearch}
+                      onChange={(e) => setAddAttendeeSearch(e.target.value)}
+                      className="input mb-3"
+                    />
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {athletesToAdd.length === 0 ? (
+                        <p className="text-sm text-gray-500">Eklenebilecek sporcu yok (hepsi zaten listede)</p>
+                      ) : (
+                        athletesToAdd.map((athlete) => (
+                          <div
+                            key={athlete._id}
+                            onClick={() => handleAddAttendee(athlete._id)}
+                            className="flex items-center justify-between p-2 hover:bg-primary-100 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <span className="font-medium">{athlete.firstName} {athlete.lastName}</span>
+                            <span className="text-primary-600 text-sm">+ Ekle</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 {selectedSession.attendees?.length > 0 ? (
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {selectedSession.attendees.map((attendee, idx) => {
                       const athlete = attendee.athlete
+                      const athleteId = typeof athlete === 'object' ? athlete?._id : athlete
                       const isPackage = athlete?.membershipType === '8 Seanslık'
                       
                       return (
@@ -517,6 +604,13 @@ export default function Sessions() {
                             {attendee.sessionDeducted && (
                               <span className="badge badge-success text-xs">✓ Düşüldü</span>
                             )}
+                            <button
+                              onClick={() => athleteId && handleRemoveAttendee(athleteId)}
+                              className="p-2 hover:bg-red-50 rounded-lg text-red-500"
+                              title="Yanlışlıkla eklenen - Kaldır (seans hakkı iade)"
+                            >
+                              <UserMinus className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       )
@@ -533,6 +627,14 @@ export default function Sessions() {
                     </p>
                   </div>
                 )}
+
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
+                  <p className="font-medium">Geçmiş seans düzenleme</p>
+                  <p className="text-xs mt-1">
+                    • <strong>Sporcu Ekle:</strong> Unutulan ismi sonradan ekleyebilirsiniz (seans hakkı düşer)<br />
+                    • <strong>Kaldır (⟵):</strong> Yanlışlıkla eklenen kişiyi çıkarabilirsiniz (seans hakkı iade)
+                  </p>
+                </div>
               </div>
             </motion.div>
           </motion.div>

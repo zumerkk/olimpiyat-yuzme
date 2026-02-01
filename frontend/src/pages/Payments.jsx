@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import {
   Plus, CreditCard, CheckCircle, Clock, AlertTriangle, X,
   Calendar, Package, RefreshCw, ChevronLeft, ChevronRight, Zap,
-  DollarSign, PieChart, TrendingDown, History, Percent
+  DollarSign, PieChart, TrendingDown, History, Percent, Undo2
 } from 'lucide-react'
 
 const PAYMENT_STATUSES = ['Ödendi', 'Beklemede', 'Gecikmiş', 'Kısmi Ödeme']
@@ -125,6 +125,20 @@ export default function Payments() {
       })
       toast.success(response.data.message)
       closePayModal()
+      fetchPayments()
+      fetchStats()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'İşlem başarısız')
+    }
+  }
+
+  // Yanlışlıkla işaretlenen ödemeyi geri al
+  const handleRevertPayment = async (payment) => {
+    if (!confirm(`${payment.athlete?.firstName} ${payment.athlete?.lastName} için ödeme kaydı geri alınacak. Bu işlem ödemeyi "Beklemede" durumuna çevirecektir. Devam edilsin mi?`)) return
+    
+    try {
+      await api.patch(`/payments/${payment._id}/revert`)
+      toast.success('Ödeme geri alındı. Kayıt bekleyen durumuna geçti.')
       fetchPayments()
       fetchStats()
     } catch (error) {
@@ -361,7 +375,7 @@ export default function Payments() {
               </span>
               <span className="inline-flex items-center gap-1 mr-3">
                 <Package className="w-4 h-4 text-purple-500" />
-                <strong>8 Seanslık:</strong> Paket bitince ödeme (Varsayılan: 4.000₺)
+                <strong>8 Seanslık:</strong> Paket bitince ödeme (Varsayılan: 5.000₺)
               </span>
               <span className="inline-flex items-center gap-1">
                 <PieChart className="w-4 h-4 text-blue-500" />
@@ -513,9 +527,19 @@ export default function Payments() {
                               Ödeme Al
                             </button>
                           ) : (
-                            <span className="text-sm text-gray-400">
-                              {formatDate(payment.paymentDate)}
-                            </span>
+                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 justify-end">
+                              <span className="text-sm text-gray-400">
+                                {formatDate(payment.paymentDate)}
+                              </span>
+                              <button
+                                onClick={() => handleRevertPayment(payment)}
+                                className="btn-secondary btn-sm flex items-center gap-1.5"
+                                title="Yanlışlıkla işaretlendiyse geri al"
+                              >
+                                <Undo2 className="w-4 h-4" />
+                                Geri Al
+                              </button>
+                            </div>
                           )}
                         </td>
                       </motion.tr>
