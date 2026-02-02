@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Waves, Users, Award, Clock, MapPin, Phone, Mail, ChevronRight } from 'lucide-react'
+import ZmkAgencyBranding from '../components/ZmkAgencyBranding'
 
 export default function HomePage() {
   return (
@@ -205,10 +206,13 @@ export default function HomePage() {
               </div>
             </div>
             
-            <div className="border-t border-white/10 mt-8 pt-6 text-center">
+            <div className="border-t border-white/10 mt-8 pt-6 text-center space-y-3">
               <p className="text-white/50 text-sm">
                 © {new Date().getFullYear()} Kırıkkale Olimpiyat Spor Kulübü. Tüm hakları saklıdır.
               </p>
+              <div className="flex justify-center">
+                <ZmkAgencyBranding variant="light" />
+              </div>
             </div>
           </div>
         </footer>

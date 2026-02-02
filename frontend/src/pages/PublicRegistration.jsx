@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { publicApi, formatError, connectionManager, offlineQueue, SWIMMING_CONFIG } from '../utils/api'
 import ConnectionStatus, { InlineConnectionStatus } from '../components/ConnectionStatus'
+import ZmkAgencyBranding from '../components/ZmkAgencyBranding'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Form Initial State
@@ -302,6 +303,9 @@ export default function PublicRegistration() {
           
           <img src="/logo.png" alt="Logo" className="w-24 h-24 mx-auto" />
           <p className="text-sm text-gray-500 mt-4">Kırıkkale Olimpiyat Spor Kulübü</p>
+          <div className="flex justify-center mt-4">
+            <ZmkAgencyBranding variant="default" />
+          </div>
         </motion.div>
         <Toaster position="top-center" />
       </div>
@@ -388,6 +392,9 @@ export default function PublicRegistration() {
           </button>
           
           <img src="/logo.png" alt="Logo" className="w-20 h-20 mx-auto mt-6" />
+          <div className="flex justify-center mt-4">
+            <ZmkAgencyBranding variant="default" />
+          </div>
         </motion.div>
         <Toaster position="top-center" />
       </div>
@@ -853,9 +860,14 @@ export default function PublicRegistration() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-white/60 text-sm mt-8">
-          © {new Date().getFullYear()} Kırıkkale Olimpiyat Spor Kulübü - Yüzme Branşı
-        </p>
+        <div className="text-center mt-8 space-y-3">
+          <p className="text-white/60 text-sm">
+            © {new Date().getFullYear()} Kırıkkale Olimpiyat Spor Kulübü - Yüzme Branşı
+          </p>
+          <div className="flex justify-center">
+            <ZmkAgencyBranding variant="light" />
+          </div>
+        </div>
       </motion.div>
     </div>
   )

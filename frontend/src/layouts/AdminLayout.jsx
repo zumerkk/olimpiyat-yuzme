@@ -25,6 +25,7 @@ import {
   QrCode,
   MessageSquare
 } from 'lucide-react'
+import ZmkAgencyBranding from '../components/ZmkAgencyBranding'
 
 const navigation = [
   { name: 'Dashboard', href: '/panel', icon: LayoutDashboard },
@@ -127,6 +128,11 @@ export default function AdminLayout() {
               </NavLink>
             ))}
           </nav>
+
+          {/* ZMK Agency Branding */}
+          <div className="px-4 py-3 border-t border-gray-100">
+            <ZmkAgencyBranding variant="compact" />
+          </div>
 
           {/* User Profile */}
           <div className="p-4 border-t border-gray-100">

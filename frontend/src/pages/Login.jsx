@@ -9,6 +9,7 @@ import { motion } from 'framer-motion'
 import { useAuthStore } from '../store/authStore'
 import toast from 'react-hot-toast'
 import { Mail, Lock, LogIn, Eye, EyeOff, Waves } from 'lucide-react'
+import ZmkAgencyBranding from '../components/ZmkAgencyBranding'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -199,9 +200,14 @@ export default function Login() {
           </div>
 
           {/* Footer */}
-          <p className="text-center text-white/60 text-sm mt-6">
-            © 2024 Kırıkkale Olimpiyat Spor Kulübü
-          </p>
+          <div className="text-center mt-6 space-y-3">
+            <p className="text-white/60 text-sm">
+              © {new Date().getFullYear()} Kırıkkale Olimpiyat Spor Kulübü
+            </p>
+            <div className="flex justify-center">
+              <ZmkAgencyBranding variant="light" />
+            </div>
+          </div>
         </motion.div>
       </div>
     </div>
