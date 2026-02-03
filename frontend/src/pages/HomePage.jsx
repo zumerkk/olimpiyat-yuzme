@@ -35,7 +35,7 @@ export default function HomePage() {
             }}
           />
         ))}
-        
+
         {/* Water waves at bottom */}
         <div className="absolute bottom-0 left-0 right-0">
           <svg viewBox="0 0 1440 200" className="w-full">
@@ -68,14 +68,14 @@ export default function HomePage() {
               <span className="text-white font-bold text-lg hidden sm:block">Olimpiyat Yüzme</span>
             </div>
             <div className="flex items-center gap-3">
-              <Link 
-                to="/kayit" 
+              <Link
+                to="/kayit"
                 className="px-4 py-2 text-white/90 hover:text-white transition-colors"
               >
                 Online Kayıt
               </Link>
-              <Link 
-                to="/giris" 
+              <Link
+                to="/giris"
                 className="px-5 py-2.5 bg-white text-primary-700 rounded-xl font-semibold hover:bg-white/90 transition-colors shadow-lg"
               >
                 Yönetim Paneli
@@ -92,33 +92,33 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <img 
-                src="/logo.png" 
-                alt="Kırıkkale Olimpiyat Spor Kulübü" 
+              <img
+                src="/logo.png"
+                alt="Kırıkkale Olimpiyat Spor Kulübü"
                 className="w-32 h-32 mx-auto mb-6"
               />
-              
+
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-display font-bold text-white mb-6">
                 Kırıkkale Olimpiyat
                 <span className="block text-primary-200">Spor Kulübü</span>
               </h1>
-              
+
               <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
-                Profesyonel eğitmenler eşliğinde, her yaş grubuna uygun yüzme eğitimi. 
+                Profesyonel eğitmenler eşliğinde, her yaş grubuna uygun yüzme eğitimi.
                 Çocuğunuzun suda güvenle yüzmesini sağlıyoruz.
               </p>
-              
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link 
-                  to="/kayit" 
+                <Link
+                  to="/kayit"
                   className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-primary-700 rounded-2xl font-bold text-lg hover:bg-white/90 transition-all shadow-xl hover:shadow-2xl hover:scale-105"
                 >
                   <Waves className="w-6 h-6" />
                   Hemen Kayıt Ol
                   <ChevronRight className="w-5 h-5" />
                 </Link>
-                <a 
-                  href="tel:+905303331182" 
+                <a
+                  href="tel:+905303331182"
                   className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white/10 backdrop-blur text-white rounded-2xl font-semibold text-lg hover:bg-white/20 transition-all border border-white/20"
                 >
                   <Phone className="w-5 h-5" />
@@ -129,7 +129,7 @@ export default function HomePage() {
           </div>
 
           {/* Features */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
@@ -144,7 +144,7 @@ export default function HomePage() {
                 Deneyimli ve sertifikalı yüzme eğitmenleri ile güvenli öğrenme ortamı.
               </p>
             </div>
-            
+
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
               <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center mb-4">
                 <Award className="w-7 h-7 text-white" />
@@ -154,7 +154,7 @@ export default function HomePage() {
                 Başlangıç seviyesinden ileri seviyeye kadar tüm yaş gruplarına eğitim.
               </p>
             </div>
-            
+
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
               <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center mb-4">
                 <Clock className="w-7 h-7 text-white" />
@@ -184,7 +184,7 @@ export default function HomePage() {
                   </a>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="text-white font-bold mb-3">Adres</h4>
                 <p className="text-white/70 flex items-start justify-center md:justify-start gap-2">
@@ -192,7 +192,7 @@ export default function HomePage() {
                   Kırıkkale, Türkiye
                 </p>
               </div>
-              
+
               <div>
                 <h4 className="text-white font-bold mb-3">Hızlı Linkler</h4>
                 <div className="space-y-2">
@@ -205,14 +205,13 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-            
-            <div className="border-t border-white/10 mt-8 pt-6 text-center space-y-3">
-              <p className="text-white/50 text-sm">
+
+            {/* ZMK Agency Hero Branding */}
+            <div className="border-t border-white/10 mt-16 pt-12 pb-6 flex flex-col items-center justify-center">
+              <ZmkAgencyBranding variant="hero" />
+              <p className="text-white/30 text-xs mt-8 font-light">
                 © {new Date().getFullYear()} Kırıkkale Olimpiyat Spor Kulübü. Tüm hakları saklıdır.
               </p>
-              <div className="flex justify-center">
-                <ZmkAgencyBranding variant="light" />
-              </div>
             </div>
           </div>
         </footer>

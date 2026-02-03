@@ -41,7 +41,7 @@ router.get('/', async (req, res) => {
     const total = await Payment.countDocuments(filter);
 
     const payments = await Payment.find(filter)
-      .populate('athlete', 'firstName lastName tcNo phone membershipType')
+      .populate('athlete', 'firstName lastName tcNo phone membershipType remainingSessions packageRenewCount')
       .populate('processedBy', 'name')
       .sort(sort)
       .skip((page - 1) * limit)
@@ -94,21 +94,25 @@ router.get('/stats', async (req, res) => {
       // Gecikmiş
       Payment.aggregate([
         { $match: { status: 'Gecikmiş' } },
-        { $group: { 
-          _id: null, 
-          total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } }, 
-          count: { $sum: 1 } 
-        } }
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } },
+            count: { $sum: 1 }
+          }
+        }
       ]),
       // Kısmi ödeme yapılmış
       Payment.aggregate([
         { $match: { status: 'Kısmi Ödeme' } },
-        { $group: { 
-          _id: null, 
-          totalPaid: { $sum: '$paidAmount' },
-          totalRemaining: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } },
-          count: { $sum: 1 } 
-        } }
+        {
+          $group: {
+            _id: null,
+            totalPaid: { $sum: '$paidAmount' },
+            totalRemaining: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } },
+            count: { $sum: 1 }
+          }
+        }
       ]),
       // Ödeme tipine göre
       Payment.aggregate([
@@ -117,10 +121,12 @@ router.get('/stats', async (req, res) => {
       // Toplam kalan borç (tüm ödenmemiş ödemeler)
       Payment.aggregate([
         { $match: { status: { $in: ['Beklemede', 'Gecikmiş', 'Kısmi Ödeme'] } } },
-        { $group: { 
-          _id: null, 
-          total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } }
-        } }
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $subtract: ['$amount', { $ifNull: ['$paidAmount', 0] }] } }
+          }
+        }
       ])
     ]);
 
@@ -130,25 +136,25 @@ router.get('/stats', async (req, res) => {
         // Toplam tahsilat (ödenen para)
         totalPaid: totalPaidStats[0]?.total || 0,
         paidCount: totalPaidStats[0]?.count || 0,
-        
+
         // Bekleyen (hiç ödeme yapılmamış)
         totalPending: totalPendingStats[0]?.total || 0,
         pendingCount: totalPendingStats[0]?.count || 0,
-        
+
         // Gecikmiş (kalan borç)
         totalOverdue: totalOverdueStats[0]?.total || 0,
         overdueCount: totalOverdueStats[0]?.count || 0,
-        
+
         // Kısmi ödeme yapılmış
         partialPayments: {
           count: totalPartialStats[0]?.count || 0,
           totalPaid: totalPartialStats[0]?.totalPaid || 0,
           totalRemaining: totalPartialStats[0]?.totalRemaining || 0
         },
-        
+
         // Toplam eksik/kalan borç
         totalRemainingBalance: totalRemainingBalance[0]?.total || 0,
-        
+
         // Ödeme tipine göre
         byType: byType.reduce((acc, item) => {
           acc[item._id] = { total: item.total, count: item.count };
@@ -279,6 +285,25 @@ router.post('/', [
 
     const { athlete, paymentType, amount, dueDate, period, packageNumber, notes } = req.body;
 
+    // Sporcu kontrolü ve uyumluluk
+    const athleteData = await Athlete.findById(athlete);
+    if (!athleteData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sporcu bulunamadı'
+      });
+    }
+
+    // Üyelik tipi kontrolü
+    // İsteğe bağlı: Sadece uyarı verilebilir veya engellenebilir. 
+    // Kullanıcı "sorunun sebebini bulup çözelim" dediği için katı kontrol ekliyoruz.
+    if (athleteData.membershipType !== paymentType) {
+      return res.status(400).json({
+        success: false,
+        message: `Hata: Sporcunun üyelik tipi (${athleteData.membershipType}) ile seçilen ödeme tipi (${paymentType}) uyuşmuyor.`
+      });
+    }
+
     const payment = await Payment.create({
       athlete,
       paymentType,
@@ -371,7 +396,7 @@ router.post('/generate-monthly', async (req, res) => {
 router.post('/:id/pay', async (req, res) => {
   try {
     const { paymentMethod, receiptNumber, notes } = req.body;
-    
+
     const payment = await Payment.findById(req.params.id)
       .populate('athlete');
 
@@ -391,7 +416,7 @@ router.post('/:id/pay', async (req, res) => {
 
     // Kalan borcu hesapla ve tam öde
     const remainingAmount = payment.amount - (payment.paidAmount || 0);
-    
+
     if (remainingAmount > 0) {
       // Kısmi ödeme kaydı olarak ekle
       payment.partialPayments.push({
@@ -402,10 +427,10 @@ router.post('/:id/pay', async (req, res) => {
         notes,
         processedBy: req.admin.id
       });
-      
+
       payment.paidAmount = payment.amount; // Tam ödendi
     }
-    
+
     payment.status = 'Ödendi';
     payment.paymentDate = new Date();
     payment.paymentMethod = paymentMethod;
@@ -418,20 +443,20 @@ router.post('/:id/pay', async (req, res) => {
     const athlete = await Athlete.findById(payment.athlete._id);
     athlete.paymentSummary.totalPaid += remainingAmount;
     athlete.paymentSummary.lastPaymentDate = new Date();
-    
+
     // 8 Seanslık paket ödendiyse paketi yenile
     if (payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
       athlete.remainingSessions = 8;
       athlete.packageRenewCount += 1;
     }
-    
+
     // Aylık üyelik için sonraki ödeme tarihini güncelle
     if (payment.paymentType === 'Aylık') {
       const nextMonth = new Date(payment.dueDate);
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       athlete.nextPaymentDate = nextMonth;
     }
-    
+
     await athlete.save();
 
     // Ödeme bildirimi ve SMS gönder
@@ -472,7 +497,7 @@ router.post('/:id/partial-pay', [
     }
 
     const { amount, paymentMethod, receiptNumber, notes } = req.body;
-    
+
     const payment = await Payment.findById(req.params.id)
       .populate('athlete');
 
@@ -492,14 +517,14 @@ router.post('/:id/partial-pay', [
 
     // Kalan borcu kontrol et
     const remainingBalance = payment.amount - (payment.paidAmount || 0);
-    
+
     if (amount <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Ödeme tutarı 0\'dan büyük olmalıdır'
       });
     }
-    
+
     if (amount > remainingBalance) {
       return res.status(400).json({
         success: false,
@@ -516,12 +541,12 @@ router.post('/:id/partial-pay', [
       notes,
       processedBy: req.admin.id
     });
-    
+
     // Toplam ödenen tutarı güncelle
     payment.paidAmount = (payment.paidAmount || 0) + parseFloat(amount);
     payment.paymentMethod = paymentMethod;
     payment.processedBy = req.admin.id;
-    
+
     // Durum otomatik güncellenecek (pre-save hook)
     await payment.save();
 
@@ -529,20 +554,20 @@ router.post('/:id/partial-pay', [
     const athlete = await Athlete.findById(payment.athlete._id);
     athlete.paymentSummary.totalPaid += parseFloat(amount);
     athlete.paymentSummary.lastPaymentDate = new Date();
-    
+
     // Tam ödendiyse ve 8 Seanslık paketse
     if (payment.status === 'Ödendi' && payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
       athlete.remainingSessions = 8;
       athlete.packageRenewCount += 1;
     }
-    
+
     // Tam ödendiyse ve aylık üyelikse
     if (payment.status === 'Ödendi' && payment.paymentType === 'Aylık') {
       const nextMonth = new Date(payment.dueDate);
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       athlete.nextPaymentDate = nextMonth;
     }
-    
+
     await athlete.save();
 
     // Tam ödendiyse bildirim gönder
@@ -558,7 +583,7 @@ router.post('/:id/partial-pay', [
 
     res.json({
       success: true,
-      message: newRemainingBalance > 0 
+      message: newRemainingBalance > 0
         ? `${amount}₺ ödeme alındı. Kalan borç: ${newRemainingBalance}₺`
         : 'Ödeme tamamen tamamlandı!',
       data: {

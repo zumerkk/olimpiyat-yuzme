@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Yoklama Sistemi
+//                         Seans & Yoklama Takvimi
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react'
@@ -8,20 +8,40 @@ import { motion, AnimatePresence } from 'framer-motion'
 import api, { formatDate } from '../utils/api'
 import toast from 'react-hot-toast'
 import {
-  Plus, Calendar, Clock, Users, X, Trash2, Eye, Check, UserPlus,
-  Package, AlertCircle, ChevronLeft, ChevronRight, UserMinus, Pencil
+  Plus, Calendar as CalendarIcon, Clock, Users, X, Trash2, Eye, Check, UserPlus,
+  Package, AlertCircle, ChevronLeft, ChevronRight, UserMinus, Pencil, List, LayoutGrid,
+  MoreVertical, Filter
 } from 'lucide-react'
+import {
+  format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+  eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths,
+  isToday, parseISO, startOfDay
+} from 'date-fns'
+import { tr } from 'date-fns/locale'
 
 export default function Sessions() {
+  // View State
+  const [viewMode, setViewMode] = useState('calendar') // 'calendar' | 'list'
+  const [currentDate, setCurrentDate] = useState(new Date()) // For calendar navigation
+  const [selectedDate, setSelectedDate] = useState(new Date()) // Selected day for detail view
+
+  // Data State
   const [sessions, setSessions] = useState([])
+  const [monthlySessions, setMonthlySessions] = useState([]) // All sessions for current month
   const [athletes, setAthletes] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // List View Pagination
   const [pagination, setPagination] = useState({ current: 1, pages: 1, total: 0 })
-  const [showModal, setShowModal] = useState(false)
+
+  // Modal States
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
+
+  // Form State
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: format(new Date(), 'yyyy-MM-dd'),
     time: '10:00',
     attendees: [],
     notes: ''
@@ -31,11 +51,41 @@ export default function Sessions() {
   const [addAttendeeSearch, setAddAttendeeSearch] = useState('')
 
   useEffect(() => {
-    fetchSessions()
     fetchAthletes()
-  }, [pagination.current])
+  }, [])
 
-  const fetchSessions = async () => {
+  useEffect(() => {
+    if (viewMode === 'calendar') {
+      fetchMonthlySessions()
+    } else {
+      fetchSessionsList()
+    }
+  }, [viewMode, currentDate, pagination.current])
+
+  // Fetch sessions for the specific month (Calendar View)
+  const fetchMonthlySessions = async () => {
+    try {
+      setLoading(true)
+      const start = startOfMonth(currentDate)
+      const end = endOfMonth(currentDate)
+
+      const params = new URLSearchParams({
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        limit: 100 // Fetch enough for the month
+      })
+
+      const response = await api.get(`/sessions?${params}`)
+      setMonthlySessions(response.data.data)
+    } catch (error) {
+      toast.error('Aylık veriler yüklenemedi')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fetch paginated sessions (List View)
+  const fetchSessionsList = async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams({
@@ -48,7 +98,7 @@ export default function Sessions() {
       setSessions(response.data.data)
       setPagination(response.data.pagination)
     } catch (error) {
-      toast.error('Yoklamalar yüklenemedi')
+      toast.error('Liste yüklenemedi')
     } finally {
       setLoading(false)
     }
@@ -63,29 +113,29 @@ export default function Sessions() {
     }
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    
-    if (formData.attendees.length === 0) {
-      toast.error('En az bir sporcu seçmelisiniz')
-      return
-    }
+  // --- Calendar Logic ---
+  const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1))
+  const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1))
+  const handleToday = () => {
+    const today = new Date()
+    setCurrentDate(today)
+    setSelectedDate(today)
+  }
 
-    try {
-      await api.post('/sessions', formData)
-      toast.success('Yoklama oluşturuldu ve seans hakları güncellendi')
-      setShowModal(false)
-      setFormData({
-        date: new Date().toISOString().split('T')[0],
-        time: '10:00',
-        attendees: [],
-        notes: ''
-      })
-      fetchSessions()
-      fetchAthletes() // Güncel seans haklarını almak için
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Yoklama oluşturulamadı')
-    }
+  const onDateClick = (day) => {
+    setSelectedDate(day)
+  }
+
+  // --- Handlers ---
+  const handleCreateSession = (date = null) => {
+    setFormData({
+      date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+      time: '10:00',
+      attendees: [],
+      notes: ''
+    })
+    setSearchAthlete('')
+    setShowCreateModal(true)
   }
 
   const handleDelete = async (id) => {
@@ -93,26 +143,34 @@ export default function Sessions() {
     try {
       await api.delete(`/sessions/${id}`)
       toast.success('Yoklama silindi')
-      fetchSessions()
-      fetchAthletes()
+      if (viewMode === 'calendar') fetchMonthlySessions()
+      else fetchSessionsList()
+      // If we deleted the selected session in detail view, close it
+      if (selectedSession?._id === id) setShowDetailModal(false)
     } catch (error) {
       toast.error(error.response?.data?.message || 'Silme işlemi başarısız')
     }
   }
 
-  const openDetailModal = async (session) => {
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault()
+    if (formData.attendees.length === 0) {
+      toast.error('En az bir sporcu seçmelisiniz')
+      return
+    }
+
     try {
-      const response = await api.get(`/sessions/${session._id}`)
-      setSelectedSession(response.data.data)
-      setShowDetailModal(true)
-      setShowAddAttendeeModal(false)
-      setAddAttendeeSearch('')
+      await api.post('/sessions', formData)
+      toast.success('Yoklama oluşturuldu')
+      setShowCreateModal(false)
+      if (viewMode === 'calendar') fetchMonthlySessions()
+      else fetchSessionsList()
+      fetchAthletes()
     } catch (error) {
-      toast.error('Yoklama detayları yüklenemedi')
+      toast.error(error.response?.data?.message || 'Oluşturulamadı')
     }
   }
 
-  // Geçmiş seansa sporcu ekle (unutulan isim)
   const handleAddAttendee = async (athleteId) => {
     if (!selectedSession) return
     try {
@@ -121,368 +179,416 @@ export default function Sessions() {
       setShowAddAttendeeModal(false)
       setAddAttendeeSearch('')
       fetchAthletes()
-      toast.success('Sporcu seansa eklendi ve seans hakkı düşürüldü')
+      toast.success('Sporcu eklendi')
+      // Refresh list to update counts
+      if (viewMode === 'calendar') fetchMonthlySessions()
+      else fetchSessionsList()
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Ekleme işlemi başarısız')
+      toast.error(error.response?.data?.message || 'Ekleme başarısız')
     }
   }
 
-  // Geçmiş seansdan sporcu kaldır (yanlışlıkla eklenen)
   const handleRemoveAttendee = async (athleteId) => {
     if (!selectedSession) return
-    if (!confirm('Bu sporcuyu yoklamadan çıkaracaksınız. Seans hakkı iade edilecek. Devam?')) return
+    if (!confirm('Bu sporcuyu yoklamadan çıkarmak istediğinize emin misiniz?')) return
     try {
       const response = await api.delete(`/sessions/${selectedSession._id}/remove-attendee/${athleteId}`)
       setSelectedSession(response.data.data)
       fetchAthletes()
-      toast.success('Sporcu yoklamadan çıkarıldı, seans hakkı iade edildi')
+      toast.success('Sporcu çıkarıldı')
+      if (viewMode === 'calendar') fetchMonthlySessions()
+      else fetchSessionsList()
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Kaldırma işlemi başarısız')
+      toast.error(error.response?.data?.message || 'Çıkarma başarısız')
     }
   }
 
-  const toggleAttendee = (athleteId) => {
-    const isSelected = formData.attendees.includes(athleteId)
-    if (isSelected) {
-      setFormData({
-        ...formData,
-        attendees: formData.attendees.filter(id => id !== athleteId)
-      })
-    } else {
-      setFormData({
-        ...formData,
-        attendees: [...formData.attendees, athleteId]
-      })
+  const openDetailModal = async (session) => {
+    try {
+      // Fetch full details including populated fields if necessary, 
+      // though monthly list might preserve some. Safer to fetch fresh.
+      const response = await api.get(`/sessions/${session._id}`)
+      setSelectedSession(response.data.data)
+      setShowDetailModal(true)
+      setShowAddAttendeeModal(false)
+    } catch (error) {
+      toast.error('Detaylar alınamadı')
     }
   }
 
-  const filteredAthletes = athletes.filter(a => 
+  // --- Filtering Helpers ---
+  const filteredAthletes = athletes.filter(a =>
     `${a.firstName} ${a.lastName}`.toLowerCase().includes(searchAthlete.toLowerCase()) ||
     a.tcNo.includes(searchAthlete)
   )
 
-  // Sporcu ekleme için - zaten yoklamada olanları hariç tut
-  const currentAttendeeIds = selectedSession?.attendees?.map(a => 
-    typeof a.athlete === 'object' ? a.athlete?._id : a.athlete
-  ) || []
-  const athletesToAdd = athletes.filter(a => 
-    !currentAttendeeIds.includes(a._id) &&
-    (`${a.firstName} ${a.lastName}`.toLowerCase().includes(addAttendeeSearch.toLowerCase()) ||
-    (a.tcNo || '').includes(addAttendeeSearch))
-  )
-
-  const openAddModal = () => {
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      time: '10:00',
-      attendees: [],
-      notes: ''
-    })
-    setSearchAthlete('')
-    setShowModal(true)
+  const toggleAttendee = (id) => {
+    setFormData(prev => ({
+      ...prev,
+      attendees: prev.attendees.includes(id)
+        ? prev.attendees.filter(a => a !== id)
+        : [...prev.attendees, id]
+    }))
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-display font-bold text-gray-900">Yoklama</h1>
-          <p className="text-gray-500 text-sm mt-1">Seans yoklaması oluşturun ve takip edin</p>
-        </div>
-        <button onClick={openAddModal} className="btn-primary">
-          <Plus className="w-5 h-5" />
-          Seans Oluştur
-        </button>
-      </div>
+  // Get sessions for selected date
+  const sessionsForSelectedDate = monthlySessions.filter(s =>
+    isSameDay(parseISO(s.date), selectedDate)
+  )
 
-      {/* Sessions List */}
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="spinner"></div>
+  return (
+    <div className="h-[calc(100vh-6rem)] flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-gray-900">Seans Takvimi</h1>
+          <p className="text-gray-500 text-sm mt-1">Yoklamaları yönetin ve planlayın</p>
         </div>
-      ) : sessions.length === 0 ? (
-        <div className="card p-16 text-center">
-          <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">Henüz yoklama kaydı oluşturulmamış</p>
-          <button onClick={openAddModal} className="btn-primary mt-4">
-            <Plus className="w-5 h-5" />
-            İlk Yoklamayı Oluştur
-          </button>
-        </div>
-      ) : (
-        <div className="card overflow-hidden">
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tarih</th>
-                  <th>Saat</th>
-                  <th>Katılımcı Sayısı</th>
-                  <th>Durum</th>
-                  <th>Not</th>
-                  <th className="text-right">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((session, index) => (
-                  <motion.tr
-                    key={session._id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                  >
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-primary-500" />
-                        <span className="font-medium">{formatDate(session.date)}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-gray-400" />
-                        <span>{session.time}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-green-500" />
-                        <span className="font-semibold text-green-600">
-                          {session.attendees?.length || 0} sporcu
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${
-                        session.status === 'Aktif' ? 'badge-success' :
-                        session.status === 'Tamamlandı' ? 'badge-info' : 'badge-danger'
-                      }`}>
-                        {session.status}
-                      </span>
-                    </td>
-                    <td className="max-w-xs truncate text-sm text-gray-500">
-                      {session.notes || '-'}
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openDetailModal(session)}
-                          className="p-2 hover:bg-gray-100 rounded-lg text-gray-500"
-                          title="Detay / Düzenle"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(session._id)}
-                          className="p-2 hover:bg-red-50 rounded-lg text-red-500"
-                          title="Sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
+
+        <div className="flex items-center gap-3">
+          <div className="flex bg-gray-100 p-1 rounded-xl">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`p-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'calendar'
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'list'
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+              <List className="w-5 h-5" />
+            </button>
           </div>
 
-          {/* Pagination */}
-          {pagination.pages > 1 && (
-            <div className="flex items-center justify-between p-4 border-t border-gray-100">
-              <p className="text-sm text-gray-500">
-                Sayfa {pagination.current} / {pagination.pages}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPagination({ ...pagination, current: pagination.current - 1 })}
-                  disabled={pagination.current === 1}
-                  className="btn-secondary btn-sm"
-                >
+          <button onClick={() => handleCreateSession(new Date())} className="btn-primary whitespace-nowrap">
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">Yeni Seans</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-6 overflow-hidden">
+
+        {/* Calendar View */}
+        {viewMode === 'calendar' && (
+          <>
+            {/* Calendar Grid */}
+            <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+              {/* Calendar Controls */}
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-lg font-semibold text-gray-900 capitalize w-48">
+                    {format(currentDate, 'MMMM yyyy', { locale: tr })}
+                  </h2>
+                  <div className="flex items-center gap-1">
+                    <button onClick={handlePrevMonth} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600">
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button onClick={handleToday} className="px-3 py-1.5 text-sm font-medium hover:bg-gray-100 rounded-lg text-gray-600">
+                      Bugün
+                    </button>
+                    <button onClick={handleNextMonth} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600">
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Days Header */}
+              <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/50">
+                {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map(day => (
+                  <div key={day} className="py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* Days Grid */}
+              <div className="grid grid-cols-7 grid-rows-6 flex-1 bg-gray-50/30">
+                {(() => {
+                  const monthStart = startOfMonth(currentDate)
+                  const monthEnd = endOfMonth(monthStart)
+                  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 })
+                  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 })
+                  const dateFormat = "d"
+                  const rows = []
+                  let days = []
+                  let day = startDate
+                  let formattedDate = ""
+
+                  while (day <= endDate) {
+                    for (let i = 0; i < 7; i++) {
+                      formattedDate = format(day, dateFormat)
+                      const cloneDay = day
+
+                      // Find sessions for this day
+                      const daySessions = monthlySessions.filter(s => isSameDay(parseISO(s.date), cloneDay))
+
+                      days.push(
+                        <div
+                          key={day}
+                          className={`min-h-[100px] border-b border-r border-gray-100 p-2 transition-colors relative group
+                            ${!isSameMonth(day, monthStart) ? "bg-gray-50/50 text-gray-400" : "bg-white"}
+                            ${isSameDay(day, selectedDate) ? "ring-2 ring-inset ring-primary-500 bg-primary-50/30" : "hover:bg-gray-50"}
+                            ${isToday(day) ? "bg-blue-50/30" : ""}
+                          `}
+                          onClick={() => onDateClick(cloneDay)}
+                        >
+                          <div className={`flex justify-between items-start mb-1`}>
+                            <span className={`text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full
+                              ${isToday(day) ? "bg-primary-600 text-white" : "text-gray-700"}
+                            `}>
+                              {formattedDate}
+                            </span>
+                          </div>
+
+                          {/* Session Indicators */}
+                          <div className="space-y-1">
+                            {daySessions.map((session, idx) => (
+                              <div
+                                key={session._id}
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-primary-100 bg-primary-50 text-primary-700 truncate font-medium flex items-center gap-1"
+                              >
+                                <span className="opacity-75">{session.time}</span>
+                                <span>• {session.attendees?.length || 0} Kişi</span>
+                              </div>
+                            ))}
+                            {daySessions.length > 3 && (
+                              <div className="text-[10px] text-gray-400 pl-1">
+                                +{daySessions.length - 3} daha
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Add button on hover */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleCreateSession(cloneDay)
+                            }}
+                            className="absolute bottom-2 right-2 p-1.5 rounded-full bg-primary-50 text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary-100"
+                            title="Bu güne seans ekle"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )
+                      day = new Date(day.getTime() + 24 * 60 * 60 * 1000)
+                    }
+                    rows.push(<div className="contents" key={day}>{days}</div>)
+                    days = []
+                  }
+                  return rows
+                })()}
+              </div>
+            </div>
+
+            {/* Side Panel: Daily Agenda */}
+            <div className="w-80 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+              <div className="p-5 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <CalendarIcon className="w-5 h-5 text-gray-400" />
+                  {format(selectedDate, 'd MMMM EEEE', { locale: tr })}
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {sessionsForSelectedDate.length} seans planlandı
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {sessionsForSelectedDate.length > 0 ? (
+                  sessionsForSelectedDate.map(session => (
+                    <div
+                      key={session._id}
+                      onClick={() => openDetailModal(session)}
+                      className="group p-3 rounded-xl border border-gray-100 bg-gray-50 hover:bg-white hover:border-primary-200 hover:shadow-sm transition-all cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2 text-primary-700 font-semibold">
+                          <Clock className="w-4 h-4" />
+                          {session.time}
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${session.status === 'Aktif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                          {session.status}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-gray-600 text-sm mb-2">
+                        <Users className="w-4 h-4" />
+                        <span>{session.attendees?.length || 0} Sporcu</span>
+                      </div>
+
+                      {session.notes && (
+                        <p className="text-xs text-gray-400 line-clamp-1 italic">
+                          {session.notes}
+                        </p>
+                      )}
+
+                      <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-xs text-primary-600 font-medium">Detayları Gör →</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-10">
+                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <CalendarIcon className="w-6 h-6 text-gray-300" />
+                    </div>
+                    <p className="text-sm text-gray-500">Bugün için planlanmış<br />seans bulunmuyor</p>
+                    <button
+                      onClick={() => handleCreateSession(selectedDate)}
+                      className="mt-4 text-sm text-primary-600 font-medium hover:text-primary-700"
+                    >
+                      + Seans Oluştur
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* List View (Table Backup) */}
+        {viewMode === 'list' && (
+          <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col p-6 overflow-y-auto">
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Tarih</th>
+                    <th>Saat</th>
+                    <th>Katılımcı</th>
+                    <th>Durum</th>
+                    <th>Not</th>
+                    <th className="text-right">İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((session) => (
+                    <tr key={session._id} className="hover:bg-gray-50">
+                      <td className="font-medium text-gray-900">{formatDate(session.date)}</td>
+                      <td>{session.time}</td>
+                      <td>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
+                          <Users className="w-3 h-3" />
+                          {session.attendees?.length || 0}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${session.status === 'Aktif' ? 'badge-success' : 'badge-secondary'}`}>
+                          {session.status}
+                        </span>
+                      </td>
+                      <td className="text-gray-500 text-sm max-w-xs truncate">{session.notes || '-'}</td>
+                      <td className="text-right space-x-2">
+                        <button onClick={() => openDetailModal(session)} className="text-gray-400 hover:text-primary-600 transition-colors">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDelete(session._id)} className="text-gray-400 hover:text-red-600 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination Controls */}
+            {pagination.pages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-6">
+                <button className="btn-secondary btn-sm" disabled={pagination.current === 1} onClick={() => setPagination(p => ({ ...p, current: p.current - 1 }))}>
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => setPagination({ ...pagination, current: pagination.current + 1 })}
-                  disabled={pagination.current === pagination.pages}
-                  className="btn-secondary btn-sm"
-                >
+                <span className="text-sm text-gray-600">Sayfa {pagination.current} / {pagination.pages}</span>
+                <button className="btn-secondary btn-sm" disabled={pagination.current === pagination.pages} onClick={() => setPagination(p => ({ ...p, current: p.current + 1 }))}>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* --- MODALS --- */}
 
       {/* Create Session Modal */}
       <AnimatePresence>
-        {showModal && (
+        {showCreateModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="modal-overlay"
-            onClick={() => setShowModal(false)}
+            onClick={() => setShowCreateModal(false)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="modal-content max-w-3xl"
+              className="modal-content max-w-2xl"
             >
               <div className="flex items-center justify-between p-5 border-b border-gray-100">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Seans Oluştur</h3>
-                  <p className="text-sm text-gray-500 mt-1">Katılan sporcuları seçin</p>
-                </div>
-                <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                  <X className="w-5 h-5" />
-                </button>
+                <h3 className="text-lg font-bold text-gray-900">Seans Oluştur - {format(parseISO(formData.date), 'd MMMM', { locale: tr })}</h3>
+                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
               </div>
 
-              <form onSubmit={handleSubmit} className="p-5 space-y-6">
-                {/* Date & Time */}
-                <div className="grid sm:grid-cols-2 gap-4">
+              <form onSubmit={handleCreateSubmit} className="p-5 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="label">Tarih *</label>
-                    <input
-                      type="date"
-                      value={formData.date}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      className="input"
-                      required
-                    />
+                    <label className="label">Tarih</label>
+                    <input type="date" className="input" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} required />
                   </div>
                   <div>
                     <label className="label">Saat</label>
-                    <input
-                      type="time"
-                      value={formData.time}
-                      onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                      className="input"
-                    />
+                    <input type="time" className="input" value={formData.time} onChange={e => setFormData({ ...formData, time: e.target.value })} required />
                   </div>
                 </div>
 
-                {/* Athlete Selection */}
                 <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <label className="label mb-0">Katılan Sporcular *</label>
-                    <span className="text-sm text-primary-600 font-medium">
-                      {formData.attendees.length} sporcu seçildi
-                    </span>
-                  </div>
-
-                  {/* Search */}
+                  <label className="label">Sporcular ({formData.attendees.length} Seçili)</label>
                   <input
                     type="text"
-                    placeholder="Sporcu ara (isim veya TC No)..."
+                    placeholder="İsim veya TC No ile ara..."
+                    className="input mb-2"
                     value={searchAthlete}
-                    onChange={(e) => setSearchAthlete(e.target.value)}
-                    className="input mb-3"
+                    onChange={e => setSearchAthlete(e.target.value)}
                   />
-
-                  {/* Athletes List */}
-                  <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
-                    {filteredAthletes.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500">
-                        Sporcu bulunamadı
-                      </div>
-                    ) : (
-                      filteredAthletes.map((athlete) => {
-                        const isSelected = formData.attendees.includes(athlete._id)
-                        const isPackage = athlete.membershipType === '8 Seanslık'
-                        const isLowSessions = isPackage && athlete.remainingSessions <= 2
-
-                        return (
-                          <div
-                            key={athlete._id}
-                            onClick={() => toggleAttendee(athlete._id)}
-                            className={`flex items-center justify-between p-3 cursor-pointer transition-colors ${
-                              isSelected 
-                                ? 'bg-primary-50 border-l-4 border-primary-500' 
-                                : 'hover:bg-gray-50 border-l-4 border-transparent'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                                isSelected ? 'bg-primary-500' : 'bg-gray-400'
-                              }`}>
-                                {isSelected ? <Check className="w-4 h-4" /> : athlete.firstName?.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900">
-                                  {athlete.firstName} {athlete.lastName}
-                                </p>
-                                <p className="text-xs text-gray-500">{athlete.tcNo}</p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {isPackage ? (
-                                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium ${
-                                  isLowSessions 
-                                    ? 'bg-red-100 text-red-700' 
-                                    : 'bg-purple-100 text-purple-700'
-                                }`}>
-                                  <Package className="w-3.5 h-3.5" />
-                                  <span>{athlete.remainingSessions}/8</span>
-                                  {isLowSessions && <AlertCircle className="w-3.5 h-3.5" />}
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium">
-                                  <Calendar className="w-3.5 h-3.5" />
-                                  <span>Aylık</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-
-                  {/* Info Box */}
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium">Seans Hakkı Bilgisi</p>
-                        <p className="text-xs mt-1">
-                          • <strong>Aylık üyelik:</strong> Sınırsız seans, her ayın 15'inde ödeme<br />
-                          • <strong>8 Seanslık paket:</strong> Her yoklamada 1 hak düşer, 8 seansta ödeme
-                        </p>
-                      </div>
-                    </div>
+                  <div className="border border-gray-200 rounded-xl max-h-48 overflow-y-auto divide-y divide-gray-100">
+                    {filteredAthletes.map(athlete => {
+                      const isSelected = formData.attendees.includes(athlete._id)
+                      return (
+                        <div
+                          key={athlete._id}
+                          onClick={() => toggleAttendee(athlete._id)}
+                          className={`p-2 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-primary-50' : ''}`}
+                        >
+                          <span className="text-sm font-medium">{athlete.firstName} {athlete.lastName}</span>
+                          {isSelected && <Check className="w-4 h-4 text-primary-600" />}
+                        </div>
+                      )
+                    })}
+                    {filteredAthletes.length === 0 && <p className="p-4 text-center text-gray-500 text-sm">Sporcu bulunamadı</p>}
                   </div>
                 </div>
 
-                {/* Notes */}
                 <div>
-                  <label className="label">Not</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="input"
-                    rows={2}
-                    placeholder="İsteğe bağlı not..."
-                  />
+                  <label className="label">Notlar</label>
+                  <textarea className="input" rows="2" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="Opsiyonel not..." />
                 </div>
 
-                {/* Buttons */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                  <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
-                    İptal
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="btn-primary"
-                    disabled={formData.attendees.length === 0}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Yoklama Oluştur ({formData.attendees.length} sporcu)
-                  </button>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary">İptal</button>
+                  <button type="submit" className="btn-primary">Oluştur</button>
                 </div>
               </form>
             </motion.div>
@@ -507,133 +613,94 @@ export default function Sessions() {
               onClick={(e) => e.stopPropagation()}
               className="modal-content max-w-2xl"
             >
-              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="p-5 border-b border-gray-100 flex justify-between items-start bg-gray-50/50">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                    Yoklama Detayı
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-50 text-primary-700 text-xs font-medium rounded-lg">
-                      <Pencil className="w-3.5 h-3.5" />
-                      Düzenlenebilir
-                    </span>
+                  <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    {formatDate(selectedSession.date)}
+                    <span className="text-gray-400 font-normal">| {selectedSession.time}</span>
                   </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {formatDate(selectedSession.date)} - {selectedSession.time}
-                  </p>
+                  <p className="text-sm text-gray-500 mt-1">{selectedSession.status}</p>
                 </div>
-                <button onClick={() => setShowDetailModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                  <X className="w-5 h-5" />
-                </button>
+                <button onClick={() => setShowDetailModal(false)} className="p-2 hover:bg-gray-200 rounded-lg"><X className="w-5 h-5" /></button>
               </div>
 
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-medium text-gray-900 flex items-center gap-2">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-semibold text-gray-800 flex items-center gap-2">
                     <Users className="w-5 h-5 text-primary-500" />
-                    Katılan Sporcular ({selectedSession.attendees?.length || 0})
+                    Katılımcılar ({selectedSession.attendees?.length || 0})
                   </h4>
-                  <button
-                    onClick={() => setShowAddAttendeeModal(!showAddAttendeeModal)}
-                    className="btn-secondary btn-sm flex items-center gap-1.5"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Sporcu Ekle
+                  <button onClick={() => setShowAddAttendeeModal(!showAddAttendeeModal)} className="text-sm text-primary-600 font-medium hover:underline flex items-center gap-1">
+                    <UserPlus className="w-4 h-4" /> Ekle
                   </button>
                 </div>
 
-                {/* Sporcu Ekleme Alanı */}
                 {showAddAttendeeModal && (
-                  <div className="mb-4 p-4 bg-primary-50 border border-primary-100 rounded-xl">
-                    <p className="text-sm text-primary-800 font-medium mb-3">Unutulan sporcuyu ekle</p>
+                  <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
                     <input
+                      autoFocus
                       type="text"
-                      placeholder="Sporcu ara (isim veya TC No)..."
+                      className="input bg-white"
+                      placeholder="Hızlı ekle (İsim/TC)..."
                       value={addAttendeeSearch}
-                      onChange={(e) => setAddAttendeeSearch(e.target.value)}
-                      className="input mb-3"
+                      onChange={e => setAddAttendeeSearch(e.target.value)}
                     />
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {athletesToAdd.length === 0 ? (
-                        <p className="text-sm text-gray-500">Eklenebilecek sporcu yok (hepsi zaten listede)</p>
-                      ) : (
-                        athletesToAdd.map((athlete) => (
-                          <div
-                            key={athlete._id}
-                            onClick={() => handleAddAttendee(athlete._id)}
-                            className="flex items-center justify-between p-2 hover:bg-primary-100 rounded-lg cursor-pointer transition-colors"
-                          >
-                            <span className="font-medium">{athlete.firstName} {athlete.lastName}</span>
-                            <span className="text-primary-600 text-sm">+ Ekle</span>
-                          </div>
-                        ))
-                      )}
+                    <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
+                      {athletes.filter(a =>
+                        !selectedSession.attendees.some(att => (typeof att.athlete === 'object' ? att.athlete._id : att.athlete) === a._id) &&
+                        (`${a.firstName} ${a.lastName}`.toLowerCase().includes(addAttendeeSearch.toLowerCase()))
+                      ).map(athlete => (
+                        <div key={athlete._id} onClick={() => handleAddAttendee(athlete._id)} className="flex justify-between items-center p-2 hover:bg-white rounded-lg cursor-pointer text-sm">
+                          <span>{athlete.firstName} {athlete.lastName}</span>
+                          <span className="text-primary-600 font-bold">+</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
-                
-                {selectedSession.attendees?.length > 0 ? (
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {selectedSession.attendees.map((attendee, idx) => {
-                      const athlete = attendee.athlete
-                      const athleteId = typeof athlete === 'object' ? athlete?._id : athlete
-                      const isPackage = athlete?.membershipType === '8 Seanslık'
-                      
-                      return (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-primary-500 flex items-center justify-center text-white font-bold">
-                              {athlete?.firstName?.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900">
-                                {athlete?.firstName} {athlete?.lastName}
-                              </p>
-                              <p className="text-xs text-gray-500">{athlete?.tcNo}</p>
-                            </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                  {selectedSession.attendees?.map((att, idx) => {
+                    const athlete = att.athlete
+                    const isObject = typeof athlete === 'object'
+                    return (
+                      <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold">
+                            {isObject ? athlete.firstName?.charAt(0) : '?'}
                           </div>
-                          
-                          <div className="flex items-center gap-3">
-                            {isPackage ? (
-                              <span className={`text-sm font-medium ${
-                                athlete?.remainingSessions <= 2 ? 'text-red-600' : 'text-purple-600'
-                              }`}>
-                                {athlete?.remainingSessions}/8 seans
-                              </span>
-                            ) : (
-                              <span className="text-sm text-blue-600 font-medium">Aylık</span>
-                            )}
-                            {attendee.sessionDeducted && (
-                              <span className="badge badge-success text-xs">✓ Düşüldü</span>
-                            )}
-                            <button
-                              onClick={() => athleteId && handleRemoveAttendee(athleteId)}
-                              className="p-2 hover:bg-red-50 rounded-lg text-red-500"
-                              title="Yanlışlıkla eklenen - Kaldır (seans hakkı iade)"
-                            >
-                              <UserMinus className="w-4 h-4" />
-                            </button>
+                          <div>
+                            <p className="font-medium text-sm text-gray-900">{isObject ? `${athlete.firstName} ${athlete.lastName}` : 'Yükleniyor...'}</p>
+                            <p className="text-[10px] text-gray-500">{isObject && athlete.membershipType}</p>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">Bu seansa katılan sporcu yok</p>
-                )}
+                        {isObject && (
+                          <button
+                            onClick={() => handleRemoveAttendee(athlete._id)}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                            title="Çıkar"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {selectedSession.attendees?.length === 0 && <p className="text-center text-gray-400 text-sm py-4">Katılımcı yok</p>}
+                </div>
 
-                {selectedSession.notes && (
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                      <strong>Not:</strong> {selectedSession.notes}
-                    </p>
+                {/* Footer Actions */}
+                <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
+                  <div className="text-xs text-gray-400">
+                    ID: {selectedSession._id.slice(-6)}
                   </div>
-                )}
-
-                <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
-                  <p className="font-medium">Geçmiş seans düzenleme</p>
-                  <p className="text-xs mt-1">
-                    • <strong>Sporcu Ekle:</strong> Unutulan ismi sonradan ekleyebilirsiniz (seans hakkı düşer)<br />
-                    • <strong>Kaldır (⟵):</strong> Yanlışlıkla eklenen kişiyi çıkarabilirsiniz (seans hakkı iade)
-                  </p>
+                  <button
+                    onClick={() => handleDelete(selectedSession._id)}
+                    className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Yoklamayı Sil
+                  </button>
                 </div>
               </div>
             </motion.div>
