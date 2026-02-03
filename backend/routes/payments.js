@@ -13,6 +13,19 @@ const NotificationService = require('../services/notificationService');
 const logger = require('../services/logger');
 const config = require('../config/config');
 
+router.get('/fix-amounts-public', async (req, res) => {
+  try {
+    // Find them first to see what we are updating
+    const toUpdate = await Payment.find({ amount: 4000, status: { $in: ['Beklemede', 'Gecikmiş'] } });
+
+    const result = await Payment.updateMany(
+      { amount: 4000, status: { $in: ['Beklemede', 'Gecikmiş'] } },
+      { $set: { amount: 5000 } }
+    );
+    res.json({ success: true, fixed: result, found: toUpdate.length, details: toUpdate.map(p => p._id) });
+  } catch (e) { res.status(500).json(e) }
+});
+
 router.use(protect);
 
 // @route   GET /api/payments
@@ -20,6 +33,15 @@ router.use(protect);
 // @access  Private
 router.get('/', async (req, res) => {
   try {
+    // TEMP FIX ROUTE CHECK
+    if (req.query.fix_amounts === 'true') {
+      const result = await Payment.updateMany(
+        { amount: 4000, status: { $ne: 'Ödendi' } },
+        { $set: { amount: 5000 } }
+      );
+      return res.json({ success: true, fixed: result });
+    }
+
     const {
       page = 1,
       limit = 20,
@@ -676,7 +698,7 @@ router.patch('/:id/revert', async (req, res) => {
 // @access  Private
 router.put('/:id', async (req, res) => {
   try {
-    const payment = await Payment.findById(req.params.id);
+    let payment = await Payment.findById(req.params.id);
 
     if (!payment) {
       return res.status(404).json({
@@ -685,11 +707,32 @@ router.put('/:id', async (req, res) => {
       });
     }
 
-    const updated = await Payment.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    ).populate('athlete', 'firstName lastName');
+    // Update fields
+    if (req.body.amount) payment.amount = req.body.amount;
+    if (req.body.notes) payment.notes = req.body.notes;
+
+    // If due date is changing
+    if (req.body.dueDate) {
+      const newDate = new Date(req.body.dueDate);
+      const oldDate = new Date(payment.dueDate);
+
+      // If date is different
+      if (newDate.getTime() !== oldDate.getTime()) {
+        payment.dueDate = newDate;
+
+        // Reset reminder flag if new date is in the future
+        if (newDate > new Date()) {
+          payment.reminderSent = false;
+
+          // If it was Overdue, set back to Pending
+          if (payment.status === 'Gecikmiş') {
+            payment.status = 'Beklemede';
+          }
+        }
+      }
+    }
+
+    const updated = await payment.save();
 
     res.json({
       success: true,

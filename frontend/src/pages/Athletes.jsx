@@ -124,7 +124,7 @@ export default function Athletes() {
       address: '',
       membershipType: 'Aylık',
       monthlyFee: 5000,
-      packageFee: 4000,
+      packageFee: 5000,
       status: 'Aktif',
       guardian: {},
       healthInfo: {},
@@ -252,9 +252,8 @@ export default function Athletes() {
                           ) : (
                             <Package className="w-4 h-4 text-purple-500" />
                           )}
-                          <span className={`badge ${
-                            athlete.membershipType === 'Aylık' ? 'badge-info' : 'badge-primary'
-                          }`}>
+                          <span className={`badge ${athlete.membershipType === 'Aylık' ? 'badge-info' : 'badge-primary'
+                            }`}>
                             {athlete.membershipType}
                           </span>
                         </div>
@@ -264,10 +263,9 @@ export default function Athletes() {
                           <span className="text-sm text-green-600 font-medium">Sınırsız</span>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span className={`text-sm font-bold ${
-                              athlete.remainingSessions <= 2 ? 'text-red-600' : 
+                            <span className={`text-sm font-bold ${athlete.remainingSessions <= 2 ? 'text-red-600' :
                               athlete.remainingSessions <= 4 ? 'text-amber-600' : 'text-green-600'
-                            }`}>
+                              }`}>
                               {athlete.remainingSessions || 0} / 8
                             </span>
                             <span className="text-xs text-gray-500">seans kaldı</span>
@@ -275,11 +273,10 @@ export default function Athletes() {
                         )}
                       </td>
                       <td>
-                        <span className={`badge ${
-                          athlete.status === 'Aktif' ? 'badge-success' :
+                        <span className={`badge ${athlete.status === 'Aktif' ? 'badge-success' :
                           athlete.status === 'Pasif' ? 'badge-warning' :
-                          athlete.status === 'Ayrıldı' ? 'badge-danger' : 'badge-info'
-                        }`}>
+                            athlete.status === 'Ayrıldı' ? 'badge-danger' : 'badge-info'
+                          }`}>
                           {athlete.status}
                         </span>
                       </td>
@@ -454,14 +451,13 @@ export default function Athletes() {
                     <CreditCard className="w-5 h-5 text-primary-600" />
                     Üyelik Tipi Seçimi
                   </h4>
-                  
+
                   <div className="grid sm:grid-cols-2 gap-4">
                     {/* Aylık Üyelik Seçeneği */}
-                    <label className={`relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
-                      formData.membershipType === 'Aylık' 
-                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}>
+                    <label className={`relative cursor-pointer rounded-xl border-2 p-4 transition-all ${formData.membershipType === 'Aylık'
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}>
                       <input
                         type="radio"
                         name="membershipType"
@@ -471,9 +467,8 @@ export default function Athletes() {
                         className="sr-only"
                       />
                       <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          formData.membershipType === 'Aylık' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
-                        }`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${formData.membershipType === 'Aylık' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
+                          }`}>
                           <Calendar className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
@@ -490,11 +485,10 @@ export default function Athletes() {
                     </label>
 
                     {/* 8 Seanslık Paket Seçeneği */}
-                    <label className={`relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
-                      formData.membershipType === '8 Seanslık' 
-                        ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200' 
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}>
+                    <label className={`relative cursor-pointer rounded-xl border-2 p-4 transition-all ${formData.membershipType === '8 Seanslık'
+                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}>
                       <input
                         type="radio"
                         name="membershipType"
@@ -504,9 +498,8 @@ export default function Athletes() {
                         className="sr-only"
                       />
                       <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          formData.membershipType === '8 Seanslık' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-500'
-                        }`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${formData.membershipType === '8 Seanslık' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-500'
+                          }`}>
                           <Package className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
@@ -540,12 +533,12 @@ export default function Athletes() {
                       <label className="label">8 Seanslık Paket Ücreti (₺)</label>
                       <input
                         type="number"
-                        value={formData.packageFee || 4000}
+                        value={formData.packageFee || 5000}
                         onChange={(e) => setFormData({ ...formData, packageFee: parseInt(e.target.value) })}
                         className="input"
                         min={0}
                       />
-                      <p className="text-xs text-gray-500 mt-1">Varsayılan: 4.000₺ (Tanıdıklara farklı fiyat girilebilir)</p>
+                      <p className="text-xs text-gray-500 mt-1">Varsayılan: 5.000₺ (Tanıdıklara farklı fiyat girilebilir)</p>
                     </div>
                   </div>
                 </div>
@@ -559,9 +552,9 @@ export default function Athletes() {
                       <input
                         type="text"
                         value={formData.guardian?.name || ''}
-                        onChange={(e) => setFormData({ 
-                          ...formData, 
-                          guardian: { ...formData.guardian, name: e.target.value } 
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          guardian: { ...formData.guardian, name: e.target.value }
                         })}
                         className="input"
                       />
@@ -571,9 +564,9 @@ export default function Athletes() {
                       <input
                         type="tel"
                         value={formData.guardian?.phone || ''}
-                        onChange={(e) => setFormData({ 
-                          ...formData, 
-                          guardian: { ...formData.guardian, phone: e.target.value } 
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          guardian: { ...formData.guardian, phone: e.target.value }
                         })}
                         className="input"
                       />
