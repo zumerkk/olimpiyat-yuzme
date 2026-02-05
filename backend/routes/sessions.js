@@ -358,6 +358,10 @@ router.delete('/:id/remove-attendee/:athleteId', async (req, res) => {
       const athlete = await Athlete.findById(req.params.athleteId);
       if (athlete && athlete.membershipType === '8 Seanslık') {
         athlete.remainingSessions += 1;
+        // Maksimum 8 seans hakkı olabilir
+        if (athlete.remainingSessions > 8) {
+          athlete.remainingSessions = 8;
+        }
         athlete.totalSessionsUsed -= 1;
         await athlete.save();
       } else if (athlete) {
@@ -406,6 +410,10 @@ router.delete('/:id', async (req, res) => {
         if (athlete) {
           if (athlete.membershipType === '8 Seanslık') {
             athlete.remainingSessions += 1;
+            // Maksimum 8 seans hakkı olabilir
+            if (athlete.remainingSessions > 8) {
+              athlete.remainingSessions = 8;
+            }
           }
           athlete.totalSessionsUsed -= 1;
           await athlete.save();

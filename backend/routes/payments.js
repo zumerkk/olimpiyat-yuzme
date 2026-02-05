@@ -472,6 +472,12 @@ router.post('/:id/pay', async (req, res) => {
     if (payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
       athlete.remainingSessions = 8; // Mevcut hakları sıfırla, 8 yap (EKLEME DEĞİL!)
       athlete.packageRenewCount += 1;
+      logger.info('Package renewed', { 
+        athleteId: athlete._id, 
+        athleteName: `${athlete.firstName} ${athlete.lastName}`,
+        remainingSessions: 8,
+        packageRenewCount: athlete.packageRenewCount 
+      });
     }
 
     // Aylık üyelik için sonraki ödeme tarihini güncelle
