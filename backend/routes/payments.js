@@ -467,8 +467,10 @@ router.post('/:id/pay', async (req, res) => {
     athlete.paymentSummary.lastPaymentDate = new Date();
 
     // 8 Seanslık paket ödendiyse paketi yenile
+    // NOT: Mevcut seans hakkına EKLEME yapmıyoruz, direkt 8'e SET ediyoruz
+    // Örn: 2 hak kalmışsa 10 değil 8 olacak
     if (payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
-      athlete.remainingSessions = 8;
+      athlete.remainingSessions = 8; // Mevcut hakları sıfırla, 8 yap (EKLEME DEĞİL!)
       athlete.packageRenewCount += 1;
     }
 
@@ -578,8 +580,9 @@ router.post('/:id/partial-pay', [
     athlete.paymentSummary.lastPaymentDate = new Date();
 
     // Tam ödendiyse ve 8 Seanslık paketse
+    // NOT: Mevcut seans hakkına EKLEME yapmıyoruz, direkt 8'e SET ediyoruz
     if (payment.status === 'Ödendi' && payment.paymentType === '8 Seanslık' && athlete.membershipType === '8 Seanslık') {
-      athlete.remainingSessions = 8;
+      athlete.remainingSessions = 8; // Mevcut hakları sıfırla, 8 yap (EKLEME DEĞİL!)
       athlete.packageRenewCount += 1;
     }
 
