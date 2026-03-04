@@ -1,13 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //                    KIRIKKALE OLİMPİYAT SPOR KULÜBÜ
-//                         Bildirim Servisi v3.0
-//                    BozkurtSMS Entegrasyonu ile Güncellenmiş
+//                         Bildirim Servisi v3.1
+//                    Otomatik SMS Devre Dışı - Sadece Manuel SMS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const Notification = require('../models/Notification');
 const Payment = require('../models/Payment');
 const Athlete = require('../models/Athlete');
-const SMSLog = require('../models/SMSLog');
 const config = require('../config/config');
 const logger = require('./logger');
 const smsService = require('./smsService');
@@ -43,8 +42,9 @@ class NotificationService {
 
   /**
    * Aylık ödeme hatırlatması kontrolü
-   * - Vade tarihine 1 gün kala SMS gönderir
-   * - Vadesi geçmiş ödemelere süre doldu SMS'i gönderir
+   * - Vade tarihine 1 gün kala panel bildirimi oluşturur
+   * - Vadesi geçmiş ödemeler için panel bildirimi oluşturur
+   * NOT: Otomatik SMS devre dışıdır. SMS sadece admin tarafından manuel gönderilebilir.
    */
   static async checkPaymentReminders() {
     try {
@@ -58,7 +58,6 @@ class NotificationService {
       targetDate.setHours(23, 59, 59, 999);
 
       let notificationsCreated = 0;
-      let smsSent = 0;
 
       // ═══════════════════════════════════════════════════════════════════════
       // 1. YAKLAŞAN ÖDEMELER (1 gün kala)
@@ -92,27 +91,6 @@ class NotificationService {
           actionUrl: `/odemeler`
         });
         notificationsCreated++;
-
-        // SMS gönder
-        const phone = payment.athlete.phone || payment.athlete.guardian?.phone;
-        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
-          const dueDate = new Date(payment.dueDate).toLocaleDateString('tr-TR');
-          const result = await smsService.sendMonthlyPaymentReminder(
-            phone,
-            `${payment.athlete.firstName} ${payment.athlete.lastName}`,
-            payment.amount,
-            dueDate
-          );
-          
-          if (result.success) smsSent++;
-          
-          // SMS log güncelle
-          await SMSLog.findOneAndUpdate(
-            { phone: smsService.formatPhone(phone), createdAt: { $gte: new Date(Date.now() - 5000) } },
-            { athlete: payment.athlete._id, isAutomatic: true },
-            { sort: { createdAt: -1 } }
-          );
-        }
 
         // Hatırlatma gönderildi olarak işaretle
         payment.reminderSent = true;
@@ -168,32 +146,13 @@ class NotificationService {
           });
           notificationsCreated++;
         }
-
-        // SMS gönder (vadesi geçtikten sonra 1 kez)
-        const phone = payment.athlete.phone || payment.athlete.guardian?.phone;
-        const expiredSMSSent = await SMSLog.findOne({
-          athlete: payment.athlete._id,
-          type: 'monthly_expired',
-          'relatedData.paymentId': payment._id
-        });
-
-        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED && !expiredSMSSent) {
-          const result = await smsService.sendMonthlyPaymentExpired(
-            phone,
-            `${payment.athlete.firstName} ${payment.athlete.lastName}`,
-            payment.amount
-          );
-          
-          if (result.success) smsSent++;
-        }
       }
 
       logger.info('Payment reminders processed', { 
-        notifications: notificationsCreated, 
-        sms: smsSent 
+        notifications: notificationsCreated
       });
       
-      return { notifications: notificationsCreated, sms: smsSent };
+      return { notifications: notificationsCreated };
     } catch (error) {
       logger.error('Ödeme hatırlatma kontrolü hatası', { error: error.message });
       throw error;
@@ -206,8 +165,9 @@ class NotificationService {
 
   /**
    * Düşük seans hakkı hatırlatması kontrolü
-   * - 1 seans kala uyarı SMS'i gönderir
-   * - 0 seans kaldığında doldu SMS'i gönderir
+   * - 1 seans kala panel bildirimi oluşturur
+   * - 0 seans kaldığında panel bildirimi oluşturur
+   * NOT: Otomatik SMS devre dışıdır. SMS sadece admin tarafından manuel gönderilebilir.
    */
   static async checkSessionReminders() {
     try {
@@ -216,7 +176,6 @@ class NotificationService {
       today.setHours(0, 0, 0, 0);
 
       let notificationsCreated = 0;
-      let smsSent = 0;
 
       // ═══════════════════════════════════════════════════════════════════════
       // 1. SEANS HAKKI AZALIYOR (1 seans kala)
@@ -249,25 +208,6 @@ class NotificationService {
             actionUrl: `/sporcular/${athlete._id}`
           });
           notificationsCreated++;
-
-          // SMS gönder
-          const phone = athlete.phone || athlete.guardian?.phone;
-          if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
-            const result = await smsService.sendSessionWarning(
-              phone,
-              `${athlete.firstName} ${athlete.lastName}`,
-              athlete.remainingSessions
-            );
-            
-            if (result.success) smsSent++;
-            
-            // SMS log güncelle
-            await SMSLog.findOneAndUpdate(
-              { phone: smsService.formatPhone(phone), createdAt: { $gte: new Date(Date.now() - 5000) } },
-              { athlete: athlete._id, isAutomatic: true },
-              { sort: { createdAt: -1 } }
-            );
-          }
         }
       }
 
@@ -281,15 +221,6 @@ class NotificationService {
       });
 
       for (const athlete of expiredSessionAthletes) {
-        // Bugün zaten SMS gönderilmiş mi?
-        const todaySMSExists = await SMSLog.findOne({
-          athlete: athlete._id,
-          type: 'session_expired',
-          createdAt: { $gte: today }
-        });
-
-        if (todaySMSExists) continue;
-
         // Panel bildirimi
         const existingNotification = await Notification.findOne({
           type: 'session_ending',
@@ -312,26 +243,13 @@ class NotificationService {
           });
           notificationsCreated++;
         }
-
-        // SMS gönder
-        const phone = athlete.phone || athlete.guardian?.phone;
-        if (phone && config.SMS.enabled && config.NOTIFICATIONS.AUTO_SMS_ENABLED) {
-          const result = await smsService.sendSessionExpired(
-            phone,
-            `${athlete.firstName} ${athlete.lastName}`,
-            athlete.tcNo
-          );
-          
-          if (result.success) smsSent++;
-        }
       }
 
       logger.info('Session reminders processed', { 
-        notifications: notificationsCreated, 
-        sms: smsSent 
+        notifications: notificationsCreated
       });
       
-      return { notifications: notificationsCreated, sms: smsSent };
+      return { notifications: notificationsCreated };
     } catch (error) {
       logger.error('Seans hatırlatma kontrolü hatası', { error: error.message });
       throw error;
@@ -357,14 +275,7 @@ class NotificationService {
       actionUrl: '/kayitlar'
     });
 
-    // SMS ile veli'ye onay gönder
-    const phone = registration.phone || registration.guardian?.phone;
-    if (phone && config.SMS.enabled) {
-      await smsService.sendRegistrationConfirmation(
-        phone,
-        `${registration.firstName} ${registration.lastName}`
-      );
-    }
+    // NOT: Otomatik SMS devre dışı. Admin SMS panelinden manuel gönderebilir.
 
     return notification;
   }
@@ -387,15 +298,7 @@ class NotificationService {
       actionUrl: `/sporcular/${athlete._id}`
     });
 
-    // SMS ile veli'ye onay gönder
-    const phone = athlete.phone || athlete.guardian?.phone;
-    if (phone && config.SMS.enabled) {
-      await smsService.sendPaymentConfirmation(
-        phone,
-        `${athlete.firstName} ${athlete.lastName}`,
-        payment.amount
-      );
-    }
+    // NOT: Otomatik SMS devre dışı. Admin SMS panelinden manuel gönderebilir.
 
     return notification;
   }
