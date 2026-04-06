@@ -20,14 +20,16 @@ const config = {
   MONGODB_OPTIONS: {
     maxPoolSize: 10,
     minPoolSize: 2,
-    serverSelectionTimeoutMS: 30000,
-    connectTimeoutMS: 30000,
-    socketTimeoutMS: 60000,
+    serverSelectionTimeoutMS: 45000,   // Yedek cluster için artırıldı
+    connectTimeoutMS: 45000,           // Bağlantı zaman aşımı
+    socketTimeoutMS: 90000,            // Socket zaman aşımı
     family: 4,
     retryWrites: true,
+    retryReads: true,
     w: 'majority',
-    heartbeatFrequencyMS: 10000,
+    heartbeatFrequencyMS: 15000,       // Daha az sık heartbeat (kaynak tasarrufu)
     autoIndex: true,
+    maxIdleTimeMS: 60000,              // Boş bağlantıları 60s sonra kapat
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

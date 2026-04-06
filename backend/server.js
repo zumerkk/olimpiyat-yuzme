@@ -411,18 +411,23 @@ mongoose.connection.on('error', (err) => {
   serverState.healthCheckCache = null;
 });
 
+// Reconnect on disconnect (tek listener, debounce ile)
+let reconnectTimer = null;
 mongoose.connection.on('disconnected', () => {
   logger.warn('MongoDB disconnected');
   serverState.isDbConnected = false;
   serverState.healthCheckCache = null;
-});
-
-// Reconnect on disconnect
-mongoose.connection.on('disconnected', () => {
-  if (config.isProduction()) {
-    setTimeout(() => {
+  
+  // Production'da otomatik yeniden bağlan (debounce: 5s)
+  if (config.isProduction() && !reconnectTimer) {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      // Zaten bağlıysa tekrar deneme
+      if (mongoose.connection.readyState === 1) return;
       logger.info('🔄 MongoDB yeniden bağlanılıyor...');
-      mongoose.connect(config.MONGODB_URI, config.MONGODB_OPTIONS).catch(() => {});
+      mongoose.connect(config.MONGODB_URI, config.MONGODB_OPTIONS).catch((err) => {
+        logger.error('MongoDB yeniden bağlantı başarısız', { error: err.message });
+      });
     }, 5000);
   }
 });
