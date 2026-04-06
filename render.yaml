@@ -62,7 +62,7 @@ services:
       - key: SMS_API_URL
         value: "https://www.bozkurtsms.com.tr/services/api.php?islem=sms"
       - key: AUTO_SMS_ENABLED
-        value: "true"
+        value: "false"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Frontend (Static Site) - Her zaman ücretsiz
@@ -116,7 +116,7 @@ services:
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # 1. Backend Environment Variables (Secret olarak girilecek):
-#    - MONGODB_URI: mongodb+srv://olimpiyatsporklub:2002.2002@olimpiyatyuzme.tsd5d6y.mongodb.net/olimpiyat_yuzme?retryWrites=true&w=majority&appName=olimpiyatyuzme
+#    - MONGODB_URI: mongodb+srv://agencyzmkolimpiyat:2002.2002@olimpiyatyedek.ppyspgv.mongodb.net/olimpiyat_yuzme?retryWrites=true&w=majority&appName=olimpiyatyedek
 #    - ADMIN_PASSWORD: OlimpiyatAdmin2024!
 #    - SMS_USERNAME: 05303331182
 #    - SMS_PASSWORD: bozkurt
