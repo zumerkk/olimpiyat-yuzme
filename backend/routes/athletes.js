@@ -184,10 +184,13 @@ router.get('/:id', async (req, res) => {
       .sort({ date: -1 })
       .limit(20);
 
+    // Profil notlarını populate et
+    const athleteObj = athlete.toObject();
+    
     res.json({
       success: true,
       data: {
-        ...athlete.toObject(),
+        ...athleteObj,
         payments,
         recentSessions: sessions
       }
@@ -347,6 +350,94 @@ router.post('/:id/renew-package', async (req, res) => {
       data: athlete
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+});
+
+// @route   POST /api/athletes/:id/notes
+// @desc    Sporcu profil notu ekle
+// @access  Private
+router.post('/:id/notes', [
+  body('content').trim().notEmpty().withMessage('Not içeriği zorunludur'),
+  body('category').optional().isIn(['Genel', 'Davranış', 'Sağlık', 'Ödeme', 'Performans', 'İletişim'])
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const athlete = await Athlete.findById(req.params.id);
+    if (!athlete) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sporcu bulunamadı'
+      });
+    }
+
+    const { content, category } = req.body;
+
+    athlete.profileNotes.push({
+      content,
+      category: category || 'Genel',
+      createdBy: req.admin.id
+    });
+
+    await athlete.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Not eklendi',
+      data: athlete.profileNotes[athlete.profileNotes.length - 1]
+    });
+  } catch (error) {
+    logger.error('Note create error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Sunucu hatası'
+    });
+  }
+});
+
+// @route   DELETE /api/athletes/:id/notes/:noteId
+// @desc    Sporcu profil notu sil
+// @access  Private
+router.delete('/:id/notes/:noteId', async (req, res) => {
+  try {
+    const athlete = await Athlete.findById(req.params.id);
+    if (!athlete) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sporcu bulunamadı'
+      });
+    }
+
+    const noteIndex = athlete.profileNotes.findIndex(
+      n => n._id.toString() === req.params.noteId
+    );
+
+    if (noteIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Not bulunamadı'
+      });
+    }
+
+    athlete.profileNotes.splice(noteIndex, 1);
+    await athlete.save();
+
+    res.json({
+      success: true,
+      message: 'Not silindi'
+    });
+  } catch (error) {
+    logger.error('Note delete error', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Sunucu hatası'

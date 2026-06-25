@@ -11,14 +11,27 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, User, Phone, Mail, MapPin, Calendar, CreditCard,
   Heart, Users, CheckCircle, Clock, AlertTriangle, Edit2,
-  Package, RefreshCw, TrendingDown, PieChart, DollarSign
+  Package, RefreshCw, TrendingDown, PieChart, DollarSign,
+  Trash2, MessageSquare, Send, StickyNote
 } from 'lucide-react'
+
+const NOTE_CATEGORIES = [
+  { value: 'Genel', label: 'Genel', color: 'bg-gray-100 text-gray-700' },
+  { value: 'Davranış', label: 'Davranış', color: 'bg-blue-100 text-blue-700' },
+  { value: 'Sağlık', label: 'Sağlık', color: 'bg-red-100 text-red-700' },
+  { value: 'Ödeme', label: 'Ödeme', color: 'bg-green-100 text-green-700' },
+  { value: 'Performans', label: 'Performans', color: 'bg-purple-100 text-purple-700' },
+  { value: 'İletişim', label: 'İletişim', color: 'bg-amber-100 text-amber-700' },
+]
 
 export default function AthleteDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [athlete, setAthlete] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [noteContent, setNoteContent] = useState('')
+  const [noteCategory, setNoteCategory] = useState('Genel')
+  const [addingNote, setAddingNote] = useState(false)
 
   useEffect(() => {
     fetchAthlete()
@@ -30,7 +43,7 @@ export default function AthleteDetail() {
       setAthlete(response.data.data)
     } catch (error) {
       toast.error('Sporcu bilgileri yüklenemedi')
-      navigate('/sporcular')
+      navigate('/panel/sporcular')
     } finally {
       setLoading(false)
     }
@@ -47,6 +60,36 @@ export default function AthleteDetail() {
     }
   }
 
+  const handleAddNote = async (e) => {
+    e.preventDefault()
+    if (!noteContent.trim()) return
+    setAddingNote(true)
+    try {
+      await api.post(`/athletes/${id}/notes`, { content: noteContent, category: noteCategory })
+      toast.success('Not eklendi')
+      setNoteContent('')
+      setNoteCategory('Genel')
+      fetchAthlete()
+    } catch (error) {
+      toast.error('Not eklenemedi')
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
+  const handleDeleteNote = async (noteId) => {
+    if (!confirm('Bu notu silmek istediğinizden emin misiniz?')) return
+    try {
+      await api.delete(`/athletes/${id}/notes/${noteId}`)
+      toast.success('Not silindi')
+      fetchAthlete()
+    } catch (error) {
+      toast.error('Not silinemedi')
+    }
+  }
+
+  const getCategoryStyle = (cat) => NOTE_CATEGORIES.find(c => c.value === cat)?.color || 'bg-gray-100 text-gray-700'
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -61,7 +104,7 @@ export default function AthleteDetail() {
     <div className="space-y-6">
       {/* Back Button */}
       <button
-        onClick={() => navigate('/sporcular')}
+        onClick={() => navigate('/panel/sporcular')}
         className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="w-5 h-5" />
@@ -105,7 +148,7 @@ export default function AthleteDetail() {
               </div>
             </div>
             <button
-              onClick={() => navigate('/sporcular')}
+              onClick={() => navigate('/panel/sporcular')}
               className="btn bg-white/20 text-white hover:bg-white/30"
             >
               <Edit2 className="w-4 h-4" />
@@ -132,19 +175,29 @@ export default function AthleteDetail() {
                 <>
                   <div className="flex items-center gap-2">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      athlete.remainingSessions <= 2 ? 'bg-red-100' : 'bg-purple-100'
+                      (athlete.remainingSessions ?? 0) < 0 ? 'bg-red-100' :
+                      (athlete.remainingSessions ?? 0) <= 2 ? 'bg-red-100' : 'bg-purple-100'
                     }`}>
                       <Package className={`w-5 h-5 ${
-                        athlete.remainingSessions <= 2 ? 'text-red-600' : 'text-purple-600'
+                        (athlete.remainingSessions ?? 0) < 0 ? 'text-red-600' :
+                        (athlete.remainingSessions ?? 0) <= 2 ? 'text-red-600' : 'text-purple-600'
                       }`} />
                     </div>
                     <div>
                       <p className="text-sm text-gray-500">Kalan Seans</p>
-                      <p className={`font-bold text-lg ${
-                        athlete.remainingSessions <= 2 ? 'text-red-600' : 'text-purple-600'
-                      }`}>
-                        {athlete.remainingSessions || 0} / 8
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className={`font-bold text-lg ${
+                          (athlete.remainingSessions ?? 0) < 0 ? 'text-red-600' :
+                          (athlete.remainingSessions ?? 0) <= 2 ? 'text-red-600' : 'text-purple-600'
+                        }`}>
+                          {athlete.remainingSessions ?? 0} / 8
+                        </p>
+                        {(athlete.remainingSessions ?? 0) < 0 && (
+                          <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-semibold animate-pulse">
+                            Borçlu Giriş!
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -371,12 +424,35 @@ export default function AthleteDetail() {
           </div>
         </div>
         
-        {/* Son Ödeme Tarihi */}
-        {athlete.paymentSummary?.lastPaymentDate && (
-          <p className="text-sm text-gray-500 mt-4 text-center">
-            Son ödeme: {formatDate(athlete.paymentSummary.lastPaymentDate)}
-          </p>
-        )}
+        {/* Son Ödeme Tarihi - Belirgin Gösterim */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          {athlete.paymentSummary?.lastPaymentDate ? (
+            (() => {
+              const lastDate = new Date(athlete.paymentSummary.lastPaymentDate)
+              const daysSince = Math.floor((new Date() - lastDate) / (1000 * 60 * 60 * 24))
+              const isWarning = daysSince > 30
+              return (
+                <div className={`flex items-center justify-center gap-3 p-3 rounded-xl ${isWarning ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
+                  <CreditCard className={`w-5 h-5 ${isWarning ? 'text-red-500' : 'text-green-500'}`} />
+                  <div className="text-center">
+                    <p className={`text-sm font-semibold ${isWarning ? 'text-red-700' : 'text-green-700'}`}>
+                      Son Ödeme: {formatDate(athlete.paymentSummary.lastPaymentDate)}
+                    </p>
+                    <p className={`text-xs ${isWarning ? 'text-red-500' : 'text-green-500'}`}>
+                      {daysSince === 0 ? 'Bugün' : `${daysSince} gün önce`}
+                      {isWarning && ' ⚠️ Uzun süredir ödeme yok!'}
+                    </p>
+                  </div>
+                </div>
+              )
+            })()
+          ) : (
+            <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <p className="text-sm text-amber-700 font-medium">Henüz hiç ödeme yapılmamış</p>
+            </div>
+          )}
+        </div>
       </motion.div>
 
       {/* Payment History */}
@@ -474,18 +550,105 @@ export default function AthleteDetail() {
         )}
       </motion.div>
 
-      {/* Notes */}
-      {athlete.notes && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="card p-6"
-        >
-          <h3 className="font-semibold text-gray-900 mb-3">Notlar</h3>
-          <p className="text-gray-600">{athlete.notes}</p>
-        </motion.div>
-      )}
+      {/* Profil Notları - Not Defteri */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="card"
+      >
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <StickyNote className="w-5 h-5 text-primary-600" />
+            Profil Notları
+            {athlete.profileNotes?.length > 0 && (
+              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+                {athlete.profileNotes.length}
+              </span>
+            )}
+          </h3>
+        </div>
+
+        {/* Not Ekleme Formu */}
+        <form onSubmit={handleAddNote} className="p-5 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <textarea
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                placeholder="Sporcu hakkında not ekleyin..."
+                className="input text-sm"
+                rows={2}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Kategori:</span>
+              <select
+                value={noteCategory}
+                onChange={(e) => setNoteCategory(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
+              >
+                {NOTE_CATEGORIES.map(cat => (
+                  <option key={cat.value} value={cat.value}>{cat.label}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={!noteContent.trim() || addingNote}
+              className="btn-primary btn-sm text-xs"
+            >
+              <Send className="w-3.5 h-3.5" />
+              {addingNote ? 'Ekleniyor...' : 'Not Ekle'}
+            </button>
+          </div>
+        </form>
+
+        {/* Not Listesi */}
+        <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+          {athlete.profileNotes?.length > 0 ? (
+            [...athlete.profileNotes].reverse().map((note) => (
+              <div key={note._id} className="p-4 hover:bg-gray-50 transition-colors group">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getCategoryStyle(note.category)}`}>
+                        {note.category}
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        {formatDate(note.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteNote(note._id)}
+                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                    title="Notu Sil"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center">
+              <MessageSquare className="w-10 h-10 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Henüz not eklenmemiş</p>
+            </div>
+          )}
+        </div>
+
+        {/* Eski notlar (geriye uyumluluk) */}
+        {athlete.notes && (
+          <div className="p-4 bg-amber-50/50 border-t border-amber-100">
+            <p className="text-xs text-amber-600 font-medium mb-1">Eski Not:</p>
+            <p className="text-sm text-gray-600">{athlete.notes}</p>
+          </div>
+        )}
+      </motion.div>
     </div>
   )
 }

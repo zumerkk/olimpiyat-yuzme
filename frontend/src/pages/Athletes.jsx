@@ -10,7 +10,7 @@ import api, { formatDate, formatCurrency } from '../utils/api'
 import toast from 'react-hot-toast'
 import {
   Search, Plus, Filter, ChevronLeft, ChevronRight, Eye, Edit2, Trash2, X, User,
-  Calendar, CreditCard, Package, RefreshCw
+  Calendar, CreditCard, Package, RefreshCw, AlertTriangle
 } from 'lucide-react'
 
 const STATUSES = ['Aktif', 'Pasif', 'Beklemede', 'Ayrıldı']
@@ -225,8 +225,8 @@ export default function Athletes() {
                     <th>TC Kimlik No</th>
                     <th>Üyelik Tipi</th>
                     <th>Seans Durumu</th>
+                    <th>Son Ödeme</th>
                     <th>Durum</th>
-                    <th>Kayıt Tarihi</th>
                     <th className="text-right">İşlemler</th>
                   </tr>
                 </thead>
@@ -263,13 +263,46 @@ export default function Athletes() {
                           <span className="text-sm text-green-600 font-medium">Sınırsız</span>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span className={`text-sm font-bold ${athlete.remainingSessions <= 2 ? 'text-red-600' :
-                              athlete.remainingSessions <= 4 ? 'text-amber-600' : 'text-green-600'
+                            <span className={`text-sm font-bold ${
+                              (athlete.remainingSessions ?? 0) < 0 ? 'text-red-600' :
+                              (athlete.remainingSessions ?? 0) <= 2 ? 'text-red-600' :
+                              (athlete.remainingSessions ?? 0) <= 4 ? 'text-amber-600' : 'text-green-600'
                               }`}>
-                              {athlete.remainingSessions || 0} / 8
+                              {athlete.remainingSessions ?? 0} / 8
                             </span>
-                            <span className="text-xs text-gray-500">seans kaldı</span>
+                            {(athlete.remainingSessions ?? 0) < 0 && (
+                              <span className="flex items-center gap-1 text-[10px] text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full font-medium">
+                                <AlertTriangle className="w-3 h-3" />
+                                Borçlu
+                              </span>
+                            )}
+                            {(athlete.remainingSessions ?? 0) >= 0 && (
+                              <span className="text-xs text-gray-500">seans kaldı</span>
+                            )}
                           </div>
+                        )}
+                      </td>
+                      <td>
+                        {athlete.paymentSummary?.lastPaymentDate ? (
+                          <div className="flex items-center gap-1">
+                            {(() => {
+                              const lastDate = new Date(athlete.paymentSummary.lastPaymentDate)
+                              const daysSince = Math.floor((new Date() - lastDate) / (1000 * 60 * 60 * 24))
+                              const isOverdue = daysSince > 30
+                              return (
+                                <>
+                                  <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                                    {formatDate(athlete.paymentSummary.lastPaymentDate)}
+                                  </span>
+                                  {isOverdue && (
+                                    <AlertTriangle className="w-3.5 h-3.5 text-red-500" title={`${daysSince} gündür ödeme yok`} />
+                                  )}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">Ödeme yok</span>
                         )}
                       </td>
                       <td>
@@ -280,7 +313,6 @@ export default function Athletes() {
                           {athlete.status}
                         </span>
                       </td>
-                      <td className="text-sm text-gray-500">{formatDate(athlete.createdAt)}</td>
                       <td>
                         <div className="flex items-center justify-end gap-1">
                           {athlete.membershipType === '8 Seanslık' && athlete.remainingSessions <= 2 && (
@@ -293,7 +325,7 @@ export default function Athletes() {
                             </button>
                           )}
                           <Link
-                            to={`/sporcular/${athlete._id}`}
+                            to={`/panel/sporcular/${athlete._id}`}
                             className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
                             title="Detay"
                           >

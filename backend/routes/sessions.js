@@ -185,10 +185,17 @@ router.post('/', [
     for (const attendee of attendees) {
       const athlete = await Athlete.findById(attendee);
       
-      // 8 Seanslık paket ve hakkı bittiyse ödeme kaydı oluştur
-      if (athlete && athlete.membershipType === '8 Seanslık' && athlete.remainingSessions === 0) {
-        // Yeni paket ödemesi oluştur
-        await Payment.createPackagePayment(athlete);
+      // 8 Seanslık paket ve hakkı 0 veya altındaysa ödeme kaydı oluştur
+      if (athlete && athlete.membershipType === '8 Seanslık' && athlete.remainingSessions <= 0) {
+        // Zaten bekleyen ödeme yoksa yeni oluştur
+        const existingPendingPayment = await Payment.findOne({
+          athlete: athlete._id,
+          paymentType: '8 Seanslık',
+          status: { $in: ['Beklemede', 'Gecikmiş', 'Kısmi Ödeme'] }
+        });
+        if (!existingPendingPayment) {
+          await Payment.createPackagePayment(athlete);
+        }
       }
     }
 
@@ -296,9 +303,16 @@ router.post('/:id/add-attendee', async (req, res) => {
     if (athlete.membershipType === '8 Seanslık') {
       await athlete.decrementSession();
       
-      // Hakkı bittiyse ödeme oluştur
-      if (athlete.remainingSessions === 0) {
-        await Payment.createPackagePayment(athlete);
+      // Hakkı 0 veya altındaysa ve bekleyen ödeme yoksa ödeme oluştur
+      if (athlete.remainingSessions <= 0) {
+        const existingPendingPayment = await Payment.findOne({
+          athlete: athlete._id,
+          paymentType: '8 Seanslık',
+          status: { $in: ['Beklemede', 'Gecikmiş', 'Kısmi Ödeme'] }
+        });
+        if (!existingPendingPayment) {
+          await Payment.createPackagePayment(athlete);
+        }
       }
     } else {
       athlete.totalSessionsUsed += 1;

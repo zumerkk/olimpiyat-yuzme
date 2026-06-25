@@ -96,7 +96,7 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link to="/sporcular" className="stat-card group hover:shadow-lg transition-all">
+        <Link to="/panel/sporcular" className="stat-card group hover:shadow-lg transition-all">
           <div className="stat-icon bg-primary-100 text-primary-600 group-hover:scale-110 transition-transform">
             <Users className="w-6 h-6" />
           </div>
@@ -106,7 +106,7 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link to="/seanslar" className="stat-card group hover:shadow-lg transition-all">
+        <Link to="/panel/seanslar" className="stat-card group hover:shadow-lg transition-all">
           <div className="stat-icon bg-emerald-100 text-emerald-600 group-hover:scale-110 transition-transform">
             <Calendar className="w-6 h-6" />
           </div>
@@ -116,7 +116,7 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link to="/odemeler" className="stat-card group hover:shadow-lg transition-all">
+        <Link to="/panel/odemeler" className="stat-card group hover:shadow-lg transition-all">
           <div className="stat-icon bg-amber-100 text-amber-600 group-hover:scale-110 transition-transform">
             <CreditCard className="w-6 h-6" />
           </div>
@@ -126,7 +126,7 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        <Link to="/odemeler?status=Gecikmiş" className="stat-card group hover:shadow-lg transition-all">
+        <Link to="/panel/odemeler?status=Gecikmiş" className="stat-card group hover:shadow-lg transition-all">
           <div className="stat-icon bg-red-100 text-red-600 group-hover:scale-110 transition-transform">
             <AlertTriangle className="w-6 h-6" />
           </div>
@@ -260,7 +260,7 @@ export default function Dashboard() {
         <motion.div variants={itemVariants} className="card">
           <div className="flex items-center justify-between p-5 border-b border-gray-100">
             <h3 className="font-semibold text-gray-900">Son Eklenen Sporcular</h3>
-            <Link to="/sporcular" className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+            <Link to="/panel/sporcular" className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
               Tümünü Gör <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -268,7 +268,7 @@ export default function Dashboard() {
             {recent?.athletes?.map((athlete) => (
               <Link 
                 key={athlete._id} 
-                to={`/sporcular/${athlete._id}`}
+                to={`/panel/sporcular/${athlete._id}`}
                 className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
               >
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold">
@@ -298,7 +298,7 @@ export default function Dashboard() {
         <motion.div variants={itemVariants} className="card">
           <div className="flex items-center justify-between p-5 border-b border-gray-100">
             <h3 className="font-semibold text-gray-900">Son Alınan Ödemeler</h3>
-            <Link to="/odemeler" className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+            <Link to="/panel/odemeler" className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
               Tümünü Gör <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -338,19 +338,19 @@ export default function Dashboard() {
       <motion.div variants={itemVariants} className="card p-6">
         <h3 className="font-semibold text-gray-900 mb-4">Hızlı İşlemler</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link to="/sporcular" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
+          <Link to="/panel/sporcular" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
             <UserPlus className="w-8 h-8 mx-auto mb-2 text-gray-400 group-hover:text-primary-600" />
             <p className="font-medium text-gray-700 group-hover:text-primary-700">Sporcu Ekle</p>
           </Link>
-          <Link to="/seanslar" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
+          <Link to="/panel/seanslar" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
             <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-400 group-hover:text-primary-600" />
             <p className="font-medium text-gray-700 group-hover:text-primary-700">Seans Oluştur</p>
           </Link>
-          <Link to="/odemeler" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
+          <Link to="/panel/odemeler" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
             <CreditCard className="w-8 h-8 mx-auto mb-2 text-gray-400 group-hover:text-primary-600" />
             <p className="font-medium text-gray-700 group-hover:text-primary-700">Ödeme Al</p>
           </Link>
-          <Link to="/kayitlar" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
+          <Link to="/panel/kayitlar" className="p-4 rounded-xl border-2 border-dashed border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all text-center group">
             <Bell className="w-8 h-8 mx-auto mb-2 text-gray-400 group-hover:text-primary-600" />
             <p className="font-medium text-gray-700 group-hover:text-primary-700">QR Kod Al</p>
           </Link>

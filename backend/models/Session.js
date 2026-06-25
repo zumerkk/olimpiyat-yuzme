@@ -80,6 +80,7 @@ sessionSchema.virtual('formattedDate').get(function() {
 });
 
 // Sporcu yoklama işlemi - seans hakkını düşür
+// NOT: 8 Seanslık pakette hak 0'ın altına da düşebilir (borçlu giriş)
 sessionSchema.methods.processAttendance = async function() {
   const Athlete = mongoose.model('Athlete');
   
@@ -87,7 +88,7 @@ sessionSchema.methods.processAttendance = async function() {
     if (attendee.attended && !attendee.sessionDeducted) {
       const athlete = await Athlete.findById(attendee.athlete);
       if (athlete) {
-        // 8 Seanslık paket için hak düşür
+        // 8 Seanslık paket için hak düşür (eksiye de düşebilir)
         if (athlete.membershipType === '8 Seanslık') {
           await athlete.decrementSession();
           attendee.sessionDeducted = true;

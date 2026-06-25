@@ -6,6 +6,24 @@
 const mongoose = require('mongoose');
 const config = require('../config/config');
 
+// Profil Notları Alt Şeması
+const profileNoteSchema = new mongoose.Schema({
+  content: {
+    type: String,
+    required: [true, 'Not içeriği zorunludur'],
+    trim: true
+  },
+  category: {
+    type: String,
+    enum: ['Genel', 'Davranış', 'Sağlık', 'Ödeme', 'Performans', 'İletişim'],
+    default: 'Genel'
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
+  }
+}, { _id: true, timestamps: true });
+
 const athleteSchema = new mongoose.Schema({
   // Sporcu Bilgileri
   firstName: {
@@ -144,11 +162,14 @@ const athleteSchema = new mongoose.Schema({
     default: 'Aktif'
   },
   
-  // Notlar
+  // Notlar (eski alan - geriye uyumluluk)
   notes: {
     type: String,
     trim: true
   },
+  
+  // Profil Notları (yeni - kategorili, tarihli not defteri)
+  profileNotes: [profileNoteSchema],
   
   // Ödeme özeti
   paymentSummary: {
@@ -185,7 +206,11 @@ athleteSchema.virtual('membershipStatus').get(function() {
   if (this.membershipType === 'Aylık') {
     return 'Sınırsız Seans';
   } else {
-    return `${this.remainingSessions || 0} Seans Kaldı`;
+    const remaining = this.remainingSessions ?? 0;
+    if (remaining < 0) {
+      return `${remaining} Seans (Borçlu!)`;
+    }
+    return `${remaining} Seans Kaldı`;
   }
 });
 
@@ -216,13 +241,14 @@ athleteSchema.pre('save', function(next) {
 });
 
 // Seans düşürme metodu (8 Seanslık paket için)
+// NOT: Artık 0'ın altına da düşebilir (eksili seans = borçlu giriş)
 athleteSchema.methods.decrementSession = async function() {
-  if (this.membershipType === '8 Seanslık' && this.remainingSessions > 0) {
-    this.remainingSessions -= 1;
+  if (this.membershipType === '8 Seanslık') {
+    this.remainingSessions = (this.remainingSessions ?? 0) - 1;
     this.totalSessionsUsed += 1;
     
-    // 8 seans dolduğunda ödeme gerekli
-    if (this.remainingSessions === 0) {
+    // Seans hakkı 0 veya altına düştüğünde ödeme gerekli
+    if (this.remainingSessions <= 0) {
       this.nextPaymentDate = new Date(); // Hemen ödeme gerekli
     }
     
